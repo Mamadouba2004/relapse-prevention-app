@@ -1,15 +1,23 @@
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useState } from 'react';
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { getScreenUnlocksLastHours, initDataCollection } from '../services/dataCollection';
 
 export default function HomeScreen() {
   const [logs, setLogs] = useState<any[]>([]);
   const [db, setDb] = useState<SQLite.SQLiteDatabase | null>(null);
+  const [screenUnlocks, setScreenUnlocks] = useState(0);
 
   // Initialize database when component loads
-  useEffect(() => {
-    initDatabase();
-  }, []);
+useEffect(() => {
+  initDatabase();
+  initDataCollection();
+  loadScreenUnlocks();
+  
+  // Refresh every minute
+  const interval = setInterval(loadScreenUnlocks, 60000);
+  return () => clearInterval(interval);
+}, []);
 
   const initDatabase = async () => {
     const database = await SQLite.openDatabaseAsync('behavior.db');
@@ -50,9 +58,20 @@ export default function HomeScreen() {
     return date.toLocaleString();
   };
 
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>How are you feeling?</Text>
+  const loadScreenUnlocks = async () => {
+  const count = await getScreenUnlocksLastHours(3);
+  setScreenUnlocks(count);
+};
+
+return (
+  <View style={styles.container}>
+    <View style={styles.statsContainer}>
+      <Text style={styles.statsText}>
+        📱 Screen unlocks (last 3 hours): {screenUnlocks}
+      </Text>
+    </View>
+
+    <Text style={styles.title}>How are you feeling?</Text>
 
       <TouchableOpacity 
         style={[styles.button, styles.urgeButton]}
@@ -94,6 +113,18 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
     backgroundColor: '#1a1a1a',
+  },
+  statsContainer: {
+    backgroundColor: '#2a2a2a',
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 60,
+    marginBottom: 20,
+  },
+  statsText: {
+    color: '#ffffff',
+    fontSize: 16,
+    textAlign: 'center',
   },
   title: {
     fontSize: 28,
