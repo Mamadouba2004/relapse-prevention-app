@@ -1,97 +1,153 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import * as SQLite from 'expo-sqlite';
+import React, { useEffect, useState } from 'react';
+import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-<ThemedText type="title">My Relapse Prevention App! 🚀</ThemedText>        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const [logs, setLogs] = useState<any[]>([]);
+  const [db, setDb] = useState<SQLite.SQLiteDatabase | null>(null);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  // Initialize database when component loads
+  useEffect(() => {
+    initDatabase();
+  }, []);
+
+  const initDatabase = async () => {
+    const database = await SQLite.openDatabaseAsync('behavior.db');
+    setDb(database);
+
+    // Create table if it doesn't exist
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL,
+        timestamp INTEGER NOT NULL
+      );
+    `);
+
+    loadLogs(database);
+  };
+
+  const loadLogs = async (database: SQLite.SQLiteDatabase) => {
+    const result = await database.getAllAsync('SELECT * FROM logs ORDER BY timestamp DESC LIMIT 10');
+    setLogs(result);
+  };
+
+  const logEvent = async (type: 'urge' | 'lapse') => {
+    if (!db) return;
+
+    const timestamp = Date.now();
+    
+    await db.runAsync(
+      'INSERT INTO logs (type, timestamp) VALUES (?, ?)',
+      [type, timestamp]
+    );
+
+    loadLogs(db);
+  };
+
+  const formatTime = (timestamp: number) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString();
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>How are you feeling?</Text>
+
+      <TouchableOpacity 
+        style={[styles.button, styles.urgeButton]}
+        onPress={() => logEvent('urge')}
+      >
+        <Text style={styles.buttonText}>😰 Feeling an Urge</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={[styles.button, styles.lapseButton]}
+        onPress={() => logEvent('lapse')}
+      >
+        <Text style={styles.buttonText}>😔 Had a Lapse</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.historyTitle}>Recent Logs:</Text>
+      
+      <FlatList
+        data={logs}
+        keyExtractor={(item) => item.id.toString()}
+        renderItem={({ item }) => (
+          <View style={styles.logItem}>
+            <Text style={styles.logType}>
+              {item.type === 'urge' ? '😰 Urge' : '😔 Lapse'}
+            </Text>
+            <Text style={styles.logTime}>{formatTime(item.timestamp)}</Text>
+          </View>
+        )}
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>No logs yet. Tap a button above!</Text>
+        }
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: '#1a1a1a',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    marginTop: 60,
+    marginBottom: 30,
+    textAlign: 'center',
+  },
+  button: {
+    padding: 20,
+    borderRadius: 12,
+    marginVertical: 10,
     alignItems: 'center',
-    gap: 8,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  urgeButton: {
+    backgroundColor: '#f57c00',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  lapseButton: {
+    backgroundColor: '#d32f2f',
+  },
+  buttonText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#ffffff',
+  },
+  historyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    marginTop: 40,
+    marginBottom: 15,
+  },
+  logItem: {
+    backgroundColor: '#2a2a2a',
+    padding: 15,
+    borderRadius: 8,
+    marginVertical: 5,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  logType: {
+    fontSize: 16,
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  logTime: {
+    fontSize: 14,
+    color: '#999999',
+  },
+  emptyText: {
+    color: '#666666',
+    textAlign: 'center',
+    marginTop: 20,
+    fontSize: 16,
   },
 });
