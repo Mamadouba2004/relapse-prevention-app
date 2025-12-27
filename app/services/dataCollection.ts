@@ -20,6 +20,12 @@ export const initDataCollection = async () => {
 
   // Start tracking app state changes
   AppState.addEventListener('change', handleAppStateChange);
+
+  // Log initial app open
+  await db.runAsync(
+    'INSERT INTO events (event_type, timestamp, metadata) VALUES (?, ?, ?)',
+    ['screen_on', Date.now(), JSON.stringify({ hour: new Date().getHours() })]
+  );
 };
 
 const handleAppStateChange = async (nextAppState: AppStateStatus) => {

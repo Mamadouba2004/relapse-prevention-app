@@ -24,6 +24,24 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+  name="profile"
+  options={{
+    title: 'Profile',
+    tabBarIcon: ({ color, focused }) => (
+      <IconSymbol name={focused ? 'person.fill' : 'person'} color={color} size={28} />
+    ),
+  }}
+/>
+      <Tabs.Screen
+    name="analytics"
+    options={{
+      title: 'Analytics',
+      tabBarIcon: ({ color }) => (
+        <IconSymbol size={28} name="chart.bar.fill" color={color} />
+      ),
+    }}
+  />
+      <Tabs.Screen
         name="explore"
         options={{
           title: 'Explore',
