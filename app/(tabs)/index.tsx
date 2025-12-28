@@ -192,6 +192,7 @@ export default function HomeScreen() {
         <Text style={styles.message}>
           {risk?.message || 'Loading your risk detection...'}
         </Text>
+        <Text style={styles.tagline}>Support when it matters most</Text>
       </View>
 
       <View style={styles.infoCard}>
@@ -672,6 +673,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#94A3B8',
     textAlign: 'center',
+  },
+  tagline: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 12,
+    textAlign: 'center',
+    letterSpacing: 0.5,
   },
   infoCard: {
     backgroundColor: '#1E293B',

@@ -222,11 +222,11 @@ export default function InterventionModal({ visible, riskLevel, onClose }: Props
     <Modal visible={visible} animationType="slide" transparent={false}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.warningEmoji}>⚠️</Text>
-          <Text style={styles.title}>High Risk Window Detected</Text>
+          <Text style={styles.warningEmoji}>💪</Text>
+          <Text style={styles.title}>This Might Be a Tricky Moment</Text>
           <Text style={styles.riskText}>Current Risk: {riskLevel}%</Text>
           <Text style={styles.subtitle}>
-            The next 60 minutes are critical. Let's get through this together.
+            You've got tools for this. Let's use one together.
           </Text>
         </View>
 

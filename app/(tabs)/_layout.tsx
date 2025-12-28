@@ -19,14 +19,14 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: 'Now',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
         }}
       />
       <Tabs.Screen
   name="profile"
   options={{
-    title: 'Profile',
+    title: 'Pattern',
     tabBarIcon: ({ color, focused }) => (
       <IconSymbol name={focused ? 'person.fill' : 'person'} color={color} size={28} />
     ),
@@ -35,7 +35,7 @@ export default function TabLayout() {
       <Tabs.Screen
     name="analytics"
     options={{
-      title: 'Analytics',
+      title: 'Progress',
       tabBarIcon: ({ color }) => (
         <IconSymbol size={28} name="chart.bar.fill" color={color} />
       ),

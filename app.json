@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "relapse-prevention-app",
-    "slug": "relapse-prevention-app",
+    "name": "Interruption",
+    "slug": "interruption",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

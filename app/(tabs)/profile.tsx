@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BarChart } from 'react-native-chart-kit';
-import { 
-  initRiskProfile, 
-  calculate24HourProfile, 
-  getPeakDangerWindow,
-  formatHour,
-  HourlyRiskProfile 
+import {
+    calculate24HourProfile,
+    formatHour,
+    getPeakDangerWindow,
+    HourlyRiskProfile,
+    initRiskProfile
 } from '../services/riskProfile';
 
 export default function ProfileScreen() {
@@ -52,15 +52,15 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>📅 Your Risk Profile</Text>
+      <Text style={styles.title}>📅 Your Pattern Map</Text>
       <Text style={styles.subtitle}>
         Based on your patterns and triggers
       </Text>
 
-      {/* Peak Danger Window Card */}
+      {/* Peak Window Card */}
       {peakWindow && (
         <View style={styles.peakCard}>
-          <Text style={styles.peakTitle}>⚠️ Your Peak Danger Window</Text>
+          <Text style={styles.peakTitle}>🎯 Your Most Challenging Time</Text>
           <Text style={styles.peakTime}>
             {formatHour(peakWindow.startHour)} - {formatHour(peakWindow.endHour)}
           </Text>
