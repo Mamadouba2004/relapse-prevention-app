@@ -1,10 +1,11 @@
+import InterventionModal from '@/app/components/InterventionModal';
+import LapseSupportModal from '@/app/components/LapseSupportModal';
+import { initDataCollection } from '@/app/services/dataCollection';
+import { initInterventions, shouldTriggerIntervention } from '@/app/services/interventions';
 import { useRouter } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import InterventionModal from '../components/InterventionModal';
-import { initDataCollection } from '../services/dataCollection';
-import { initInterventions, shouldTriggerIntervention } from '../services/interventions';
 import {
   getCurrentRisk,
   initRiskAnalysis,
@@ -17,6 +18,7 @@ export default function HomeScreen() {
   const [risk, setRisk] = useState<RiskAssessment | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showIntervention, setShowIntervention] = useState(false);
+  const [showLapseSupport, setShowLapseSupport] = useState(false);
 
   useEffect(() => {
     checkAndInitApp();
@@ -150,7 +152,11 @@ export default function HomeScreen() {
         console.log('🌊 User logged urge - triggering intervention!');
         setShowIntervention(true);
       } else if (type === 'lapse') {
-        alert('You\'re not broken. Recovery isn\'t linear. Tomorrow is a new day. 💙');
+        // Don't just show an alert - trigger a full support flow
+        await loadRiskData();
+        
+        // Show lapse support modal
+        setShowLapseSupport(true);
       } else {
         // SAFE CHECK-IN = POSITIVE!
         // Don't reload risk (it would go up from activity)
@@ -258,6 +264,11 @@ export default function HomeScreen() {
         visible={showIntervention}
         riskLevel={risk?.percentage || 0}
         onClose={() => setShowIntervention(false)}
+      />
+
+      <LapseSupportModal
+        visible={showLapseSupport}
+        onClose={() => setShowLapseSupport(false)}
       />
     </ScrollView>
   );
