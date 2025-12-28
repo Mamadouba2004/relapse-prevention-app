@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import InterventionModal from '../components/InterventionModal';
 import { initDataCollection } from '../services/dataCollection';
 import { initInterventions, shouldTriggerIntervention } from '../services/interventions';
@@ -60,6 +60,18 @@ export default function HomeScreen() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         type TEXT NOT NULL,
         timestamp INTEGER NOT NULL
+      );
+    `);
+
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS urge_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        start_timestamp INTEGER NOT NULL,
+        intensity_before INTEGER,
+        intensity_after INTEGER,
+        intervention_type TEXT,
+        reduction INTEGER,
+        created_at INTEGER
       );
     `);
 
@@ -123,19 +135,17 @@ export default function HomeScreen() {
         [eventType, timestamp, JSON.stringify({ type })]
       );
 
-      // Reload risk
-      await loadRiskData();
-
-      // IMMEDIATELY trigger intervention for urges
+      // DIFFERENT BEHAVIOR PER TYPE:
       if (type === 'urge') {
         console.log('🌊 User logged urge - triggering intervention!');
         setShowIntervention(true);
       } else if (type === 'lapse') {
-        // Show compassionate message for lapses
-        Alert.alert('Keep Going 💙', 'You\'re still making progress. Tomorrow is a new day.');
+        alert('You\'re not broken. Recovery isn\'t linear. Tomorrow is a new day. 💙');
       } else {
-        // Positive reinforcement for "I'm Good"
-        Alert.alert('Great Job! ✨', 'Keep it up! You\'re doing amazing.');
+        // SAFE CHECK-IN = POSITIVE!
+        // Don't reload risk (it would go up from activity)
+        // Just show encouragement
+        alert('Strong move checking in! Building awareness is half the battle. ✨');
       }
       
     } catch (error) {
@@ -198,9 +208,10 @@ export default function HomeScreen() {
       <View style={styles.infoCard}>
         <Text style={styles.infoCardTitle}>How This Works</Text>
         <Text style={styles.infoCardText}>
-          Your baseline risk is based on the time of day.{'\n\n'}
+          Right now: {risk?.percentage}% (your current state){'\n\n'}
+          Typical for this hour: Check your Pattern tab{'\n\n'}
           When you tap "Record Urge", we'll help you through it.{'\n\n'}
-          During your danger hours ({risk?.peakHours?.slice(0, 2).map(h => formatHour(h)).join(', ') || 'late night'}), interventions may appear automatically.
+          During your danger hours, interventions may appear automatically.
         </Text>
       </View>
 
@@ -256,14 +267,18 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
     triggers: [] as string[],
     alonePattern: '',
     dayPattern: '',
-    urgeDuration: '', // NEW!
+    urgeDuration: '',
+    emergencyContactName: '',
+    emergencyContactPhone: '',
   });
 
   const saveProfile = async () => {
     if (!db) return;
 
+    await db.execAsync(`DROP TABLE IF EXISTS user_profile`);
+
     await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS user_profile (
+      CREATE TABLE user_profile (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         screen_time TEXT,
         risk_hours TEXT,
@@ -271,13 +286,24 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
         alone_pattern TEXT,
         day_pattern TEXT,
         urge_duration TEXT,
+        emergency_contact_name TEXT,
+        emergency_contact_phone TEXT,
         created_at INTEGER
       );
     `);
 
     await db.runAsync(
-      `INSERT INTO user_profile (screen_time, risk_hours, triggers, alone_pattern, day_pattern, urge_duration, created_at) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO user_profile (
+        screen_time, 
+        risk_hours, 
+        triggers, 
+        alone_pattern, 
+        day_pattern, 
+        urge_duration,
+        emergency_contact_name,
+        emergency_contact_phone,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.screenTime,
         JSON.stringify(data.riskHours),
@@ -285,6 +311,8 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
         data.alonePattern,
         data.dayPattern,
         data.urgeDuration,
+        data.emergencyContactName,
+        data.emergencyContactPhone,
         Date.now()
       ]
     );
@@ -305,8 +333,9 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
       case 2: return data.riskHours.length > 0;
       case 3: return data.triggers.length > 0;
       case 4: return data.alonePattern !== '';
-      case 5: return data.urgeDuration !== ''; // NEW!
-      case 6: return data.dayPattern !== '';
+      case 5: return data.urgeDuration !== '';
+      case 6: return data.emergencyContactName !== '' && data.emergencyContactPhone !== '';
+      case 7: return data.dayPattern !== '';
       default: return false;
     }
   };
@@ -479,6 +508,54 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
       case 6:
         return (
           <>
+            <Text style={onboardingStyles.title}>Emergency Contact 📞</Text>
+            <Text style={onboardingStyles.subtitle}>
+              Who can you call during tough moments?
+            </Text>
+
+            <View style={onboardingStyles.inputContainer}>
+              <Text style={onboardingStyles.inputLabel}>Contact Name</Text>
+              <TextInput
+                style={onboardingStyles.textInput}
+                placeholder="Best friend, family member, sponsor..."
+                placeholderTextColor="#64748B"
+                value={data.emergencyContactName}
+                onChangeText={(text) => setData({...data, emergencyContactName: text})}
+              />
+            </View>
+
+            <View style={onboardingStyles.inputContainer}>
+              <Text style={onboardingStyles.inputLabel}>Phone Number</Text>
+              <TextInput
+                style={onboardingStyles.textInput}
+                placeholder="(555) 123-4567"
+                placeholderTextColor="#64748B"
+                keyboardType="phone-pad"
+                value={data.emergencyContactPhone}
+                onChangeText={(text) => setData({...data, emergencyContactPhone: text})}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={onboardingStyles.skipButton}
+              onPress={() => {
+                setData({
+                  ...data, 
+                  emergencyContactName: 'Crisis Hotline',
+                  emergencyContactPhone: '988'
+                });
+              }}
+            >
+              <Text style={onboardingStyles.skipText}>
+                Skip - Use 988 Crisis Hotline instead
+              </Text>
+            </TouchableOpacity>
+          </>
+        );
+
+      case 7:
+        return (
+          <>
             <Text style={onboardingStyles.title}>Day patterns? 📅</Text>
             <Text style={onboardingStyles.subtitle}>Urges more on certain days?</Text>
 
@@ -511,9 +588,9 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
   return (
     <ScrollView style={onboardingStyles.container}>
       <View style={onboardingStyles.progressContainer}>
-        <Text style={onboardingStyles.progressText}>Step {step} of 6</Text>
+        <Text style={onboardingStyles.progressText}>Step {step} of 7</Text>
         <View style={onboardingStyles.progressBar}>
-          <View style={[onboardingStyles.progressFill, { width: `${(step / 6) * 100}%` }]} />
+          <View style={[onboardingStyles.progressFill, { width: `${(step / 7) * 100}%` }]} />
         </View>
       </View>
 
@@ -536,7 +613,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
           ]}
           disabled={!canProceed()}
           onPress={() => {
-            if (step === 6) {
+            if (step === 7) {
               saveProfile();
             } else {
               setStep(step + 1);
@@ -544,7 +621,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
           }}
         >
           <Text style={onboardingStyles.nextButtonText}>
-            {step === 6 ? 'Complete Setup ✓' : 'Next →'}
+            {step === 7 ? 'Complete Setup ✓' : 'Next →'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -644,6 +721,33 @@ const onboardingStyles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  inputContainer: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    color: '#94A3B8',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  textInput: {
+    backgroundColor: '#1E293B',
+    borderWidth: 2,
+    borderColor: '#334155',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#F1F5F9',
+  },
+  skipButton: {
+    marginTop: 12,
+    padding: 12,
+    alignItems: 'center',
+  },
+  skipText: {
+    color: '#64748B',
+    fontSize: 14,
   },
 });
 

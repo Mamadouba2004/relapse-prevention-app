@@ -18,14 +18,17 @@ const getUserProfile = async () => {
   if (!db) return null;
 
   try {
+    // First try with all columns (new schema)
     const result = await db.getAllAsync<{
       screen_time: string;
       risk_hours: string;
       triggers: string;
       alone_pattern: string;
       day_pattern: string;
-      urge_duration: string;
-    }>('SELECT * FROM user_profile ORDER BY created_at DESC LIMIT 1');
+      urge_duration?: string;
+      emergency_contact_name?: string;
+      emergency_contact_phone?: string;
+    }>('SELECT screen_time, risk_hours, triggers, alone_pattern, day_pattern, urge_duration, emergency_contact_name, emergency_contact_phone FROM user_profile ORDER BY created_at DESC LIMIT 1');
 
     if (result.length === 0) return null;
 
@@ -35,11 +38,33 @@ const getUserProfile = async () => {
       triggers: JSON.parse(result[0].triggers) as string[],
       alonePattern: result[0].alone_pattern,
       dayPattern: result[0].day_pattern,
-      urgeDuration: parseInt(result[0].urge_duration || '20'), // NEW! Default 20 min
+      urgeDuration: parseInt(result[0].urge_duration || '20'),
     };
   } catch (error) {
-    console.error('Error getting user profile:', error);
-    return null;
+    // Fallback: try without new columns (old schema)
+    try {
+      const result = await db.getAllAsync<{
+        screen_time: string;
+        risk_hours: string;
+        triggers: string;
+        alone_pattern: string;
+        day_pattern: string;
+      }>('SELECT screen_time, risk_hours, triggers, alone_pattern, day_pattern FROM user_profile ORDER BY created_at DESC LIMIT 1');
+
+      if (result.length === 0) return null;
+
+      return {
+        screenTime: result[0].screen_time,
+        riskHours: JSON.parse(result[0].risk_hours) as string[],
+        triggers: JSON.parse(result[0].triggers) as string[],
+        alonePattern: result[0].alone_pattern,
+        dayPattern: result[0].day_pattern,
+        urgeDuration: 20, // Default for old profiles
+      };
+    } catch (fallbackError) {
+      console.error('Error getting user profile:', fallbackError);
+      return null;
+    }
   }
 };
 
