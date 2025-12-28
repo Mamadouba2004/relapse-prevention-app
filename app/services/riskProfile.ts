@@ -24,6 +24,7 @@ const getUserProfile = async () => {
       triggers: string;
       alone_pattern: string;
       day_pattern: string;
+      urge_duration: string;
     }>('SELECT * FROM user_profile ORDER BY created_at DESC LIMIT 1');
 
     if (result.length === 0) return null;
@@ -34,6 +35,7 @@ const getUserProfile = async () => {
       triggers: JSON.parse(result[0].triggers) as string[],
       alonePattern: result[0].alone_pattern,
       dayPattern: result[0].day_pattern,
+      urgeDuration: parseInt(result[0].urge_duration || '20'), // NEW! Default 20 min
     };
   } catch (error) {
     console.error('Error getting user profile:', error);

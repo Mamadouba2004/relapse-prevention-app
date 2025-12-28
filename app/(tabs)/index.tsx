@@ -1,12 +1,12 @@
 import { useRouter } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { LineChart } from 'react-native-chart-kit';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import InterventionModal from '../components/InterventionModal';
 import { initDataCollection } from '../services/dataCollection';
+import { initInterventions, shouldTriggerIntervention } from '../services/interventions';
 import {
-  calculateRiskLevel,
-  getRiskTrend,
+  getCurrentRisk,
   initRiskAnalysis,
   RiskAssessment
 } from '../services/riskAnalysis';
@@ -15,8 +15,8 @@ export default function HomeScreen() {
   const router = useRouter();
   const [db, setDb] = useState<SQLite.SQLiteDatabase | null>(null);
   const [risk, setRisk] = useState<RiskAssessment | null>(null);
-  const [trendData, setTrendData] = useState<Array<{ time: number; risk: number }>>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showIntervention, setShowIntervention] = useState(false);
 
   useEffect(() => {
     checkAndInitApp();
@@ -65,19 +65,37 @@ export default function HomeScreen() {
 
     await initDataCollection();
     await initRiskAnalysis();
+    await initInterventions();
     await loadRiskData();
 
-    const interval = setInterval(loadRiskData, 60000);
+    // Check risk every hour (for auto-intervention)
+    const interval = setInterval(async () => {
+      console.log('⏰ Hourly check...');
+      await loadRiskData();
+    }, 60 * 60 * 1000); // Every hour
+
     return () => clearInterval(interval);
   };
 
   const loadRiskData = async () => {
     try {
-      const riskLevel = await calculateRiskLevel();
-      const trend = await getRiskTrend();
+      const riskLevel = await getCurrentRisk();
+      
+      console.log('📊 Current Risk:', riskLevel?.percentage, '% at', new Date().toLocaleTimeString());
       
       setRisk(riskLevel);
-      setTrendData(trend);
+
+      // Auto-trigger intervention if in danger zone
+      if (riskLevel && riskLevel.percentage >= 70) {
+        const shouldShow = await shouldTriggerIntervention(riskLevel.percentage);
+        
+        if (shouldShow) {
+          console.log('🚨 AUTO-TRIGGERING INTERVENTION');
+          setTimeout(() => {
+            setShowIntervention(true);
+          }, 500);
+        }
+      }
     } catch (error) {
       console.error('Error loading risk data:', error);
     }
@@ -89,11 +107,13 @@ export default function HomeScreen() {
     const timestamp = Date.now();
 
     try {
+      // Log to logs table
       await db.runAsync(
         'INSERT INTO logs (type, timestamp) VALUES (?, ?)',
         [type, timestamp]
       );
 
+      // Log as event
       const eventType = type === 'urge' ? 'URGE_LOGGED' : 
                         type === 'lapse' ? 'LAPSE_LOGGED' : 
                         'SAFETY_CHECK_IN';
@@ -103,17 +123,20 @@ export default function HomeScreen() {
         [eventType, timestamp, JSON.stringify({ type })]
       );
 
-      await db.runAsync(
-        'INSERT INTO events (event_type, timestamp, metadata) VALUES (?, ?, ?)',
-        ['screen_on', timestamp, JSON.stringify({ hour: new Date().getHours() })]
-      );
+      // Reload risk
+      await loadRiskData();
 
-      setTrendData([]);
-      setRisk(null);
-      
-      setTimeout(async () => {
-        await loadRiskData();
-      }, 100);
+      // IMMEDIATELY trigger intervention for urges
+      if (type === 'urge') {
+        console.log('🌊 User logged urge - triggering intervention!');
+        setShowIntervention(true);
+      } else if (type === 'lapse') {
+        // Show compassionate message for lapses
+        Alert.alert('Keep Going 💙', 'You\'re still making progress. Tomorrow is a new day.');
+      } else {
+        // Positive reinforcement for "I'm Good"
+        Alert.alert('Great Job! ✨', 'Keep it up! You\'re doing amazing.');
+      }
       
     } catch (error) {
       console.error('Error logging event:', error);
@@ -134,6 +157,13 @@ export default function HomeScreen() {
     return `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
   };
 
+  const formatHour = (hour: number): string => {
+    if (hour === 0) return '12 AM';
+    if (hour < 12) return `${hour} AM`;
+    if (hour === 12) return '12 PM';
+    return `${hour - 12} PM`;
+  };
+
   // ONBOARDING COMPONENT
   if (showOnboarding) {
     return <OnboardingFlow 
@@ -150,16 +180,6 @@ export default function HomeScreen() {
     />;
   }
 
-  // Prepare chart data
-  const chartData = {
-    labels: trendData.slice(-6).map(d => formatTime(d.time)),
-    datasets: [{
-      data: trendData.slice(-6).map(d => d.risk).length > 0 
-        ? trendData.slice(-6).map(d => d.risk)
-        : [0]
-    }]
-  };
-
   return (
     <ScrollView style={styles.container}>
       <View style={styles.riskHeader}>
@@ -174,35 +194,13 @@ export default function HomeScreen() {
         </Text>
       </View>
 
-      <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>RISK WINDOW DETECTOR</Text>
-        <Text style={styles.chartSubtitle}>Live Trend</Text>
-        
-        {trendData.length > 0 ? (
-          <LineChart
-            data={chartData}
-            width={Dimensions.get('window').width - 60}
-            height={200}
-            chartConfig={{
-              backgroundColor: '#1E293B',
-              backgroundGradientFrom: '#1E293B',
-              backgroundGradientTo: '#1E293B',
-              decimalPlaces: 0,
-              color: (opacity = 1) => `rgba(251, 146, 60, ${opacity})`,
-              labelColor: (opacity = 1) => `rgba(148, 163, 184, ${opacity})`,
-              style: { borderRadius: 16 },
-              propsForDots: {
-                r: '4',
-                strokeWidth: '2',
-                stroke: '#F59E0B'
-              }
-            }}
-            bezier
-            style={{ marginVertical: 8, borderRadius: 16 }}
-          />
-        ) : (
-          <Text style={styles.noData}>Collecting data...</Text>
-        )}
+      <View style={styles.infoCard}>
+        <Text style={styles.infoCardTitle}>How This Works</Text>
+        <Text style={styles.infoCardText}>
+          Your baseline risk is based on the time of day.{'\n\n'}
+          When you tap "Record Urge", we'll help you through it.{'\n\n'}
+          During your danger hours ({risk?.peakHours?.slice(0, 2).map(h => formatHour(h)).join(', ') || 'late night'}), interventions may appear automatically.
+        </Text>
       </View>
 
       <View style={styles.buttonRow}>
@@ -212,7 +210,7 @@ export default function HomeScreen() {
         >
           <Text style={styles.buttonEmoji}>🌊</Text>
           <Text style={styles.buttonTitle}>Record Urge</Text>
-          <Text style={styles.buttonSubtitle}>I feel a wave coming</Text>
+          <Text style={styles.buttonSubtitle}>Get help now</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
@@ -221,7 +219,7 @@ export default function HomeScreen() {
         >
           <Text style={styles.buttonEmoji}>⚡</Text>
           <Text style={styles.buttonTitle}>Record Lapse</Text>
-          <Text style={styles.buttonSubtitle}>I slipped up</Text>
+          <Text style={styles.buttonSubtitle}>It happens - keep going</Text>
         </TouchableOpacity>
       </View>
 
@@ -231,15 +229,14 @@ export default function HomeScreen() {
       >
         <Text style={styles.buttonEmoji}>🛡️</Text>
         <Text style={styles.buttonTitle}>I'm Good</Text>
-        <Text style={styles.buttonSubtitle}>STABILIZE FORECAST</Text>
+        <Text style={styles.buttonSubtitle}>Checking in strong</Text>
       </TouchableOpacity>
 
-      <View style={styles.debugBox}>
-        <Text style={styles.debugTitle}>Debug Info:</Text>
-        <Text style={styles.debugText}>Risk: {risk?.percentage}%</Text>
-        <Text style={styles.debugText}>Trend Points: {trendData.length}</Text>
-        <Text style={styles.debugText}>Last Update: {new Date().toLocaleTimeString()}</Text>
-      </View>
+      <InterventionModal
+        visible={showIntervention}
+        riskLevel={risk?.percentage || 0}
+        onClose={() => setShowIntervention(false)}
+      />
     </ScrollView>
   );
 }
@@ -258,6 +255,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
     triggers: [] as string[],
     alonePattern: '',
     dayPattern: '',
+    urgeDuration: '', // NEW!
   });
 
   const saveProfile = async () => {
@@ -271,19 +269,21 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
         triggers TEXT,
         alone_pattern TEXT,
         day_pattern TEXT,
+        urge_duration TEXT,
         created_at INTEGER
       );
     `);
 
     await db.runAsync(
-      `INSERT INTO user_profile (screen_time, risk_hours, triggers, alone_pattern, day_pattern, created_at) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO user_profile (screen_time, risk_hours, triggers, alone_pattern, day_pattern, urge_duration, created_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         data.screenTime,
         JSON.stringify(data.riskHours),
         JSON.stringify(data.triggers),
         data.alonePattern,
         data.dayPattern,
+        data.urgeDuration,
         Date.now()
       ]
     );
@@ -304,7 +304,8 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
       case 2: return data.riskHours.length > 0;
       case 3: return data.triggers.length > 0;
       case 4: return data.alonePattern !== '';
-      case 5: return data.dayPattern !== '';
+      case 5: return data.urgeDuration !== ''; // NEW!
+      case 6: return data.dayPattern !== '';
       default: return false;
     }
   };
@@ -446,6 +447,37 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
       case 5:
         return (
           <>
+            <Text style={onboardingStyles.title}>Urge duration? ⏱️</Text>
+            <Text style={onboardingStyles.subtitle}>How long do urges typically last?</Text>
+
+            {[
+              { label: '<5 minutes', value: '5' },
+              { label: '5-10 minutes', value: '10' },
+              { label: '10-20 minutes', value: '20' },
+              { label: '>20 minutes', value: '30' },
+            ].map(option => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  onboardingStyles.optionButton,
+                  data.urgeDuration === option.value && onboardingStyles.optionSelected
+                ]}
+                onPress={() => setData({...data, urgeDuration: option.value})}
+              >
+                <Text style={[
+                  onboardingStyles.optionText,
+                  data.urgeDuration === option.value && onboardingStyles.optionTextSelected
+                ]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </>
+        );
+
+      case 6:
+        return (
+          <>
             <Text style={onboardingStyles.title}>Day patterns? 📅</Text>
             <Text style={onboardingStyles.subtitle}>Urges more on certain days?</Text>
 
@@ -478,9 +510,9 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
   return (
     <ScrollView style={onboardingStyles.container}>
       <View style={onboardingStyles.progressContainer}>
-        <Text style={onboardingStyles.progressText}>Step {step} of 5</Text>
+        <Text style={onboardingStyles.progressText}>Step {step} of 6</Text>
         <View style={onboardingStyles.progressBar}>
-          <View style={[onboardingStyles.progressFill, { width: `${(step / 5) * 100}%` }]} />
+          <View style={[onboardingStyles.progressFill, { width: `${(step / 6) * 100}%` }]} />
         </View>
       </View>
 
@@ -503,7 +535,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
           ]}
           disabled={!canProceed()}
           onPress={() => {
-            if (step === 5) {
+            if (step === 6) {
               saveProfile();
             } else {
               setStep(step + 1);
@@ -511,7 +543,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
           }}
         >
           <Text style={onboardingStyles.nextButtonText}>
-            {step === 5 ? 'Complete Setup ✓' : 'Next →'}
+            {step === 6 ? 'Complete Setup ✓' : 'Next →'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -641,30 +673,24 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     textAlign: 'center',
   },
-  chartContainer: {
+  infoCard: {
     backgroundColor: '#1E293B',
     borderRadius: 16,
-    padding: 16,
+    padding: 20,
     marginBottom: 20,
     borderWidth: 1,
     borderColor: '#334155',
   },
-  chartTitle: {
-    fontSize: 10,
+  infoCardTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#64748B',
-    letterSpacing: 1,
-    marginBottom: 4,
+    color: '#F1F5F9',
+    marginBottom: 12,
   },
-  chartSubtitle: {
-    fontSize: 10,
-    color: '#475569',
-    marginBottom: 10,
-  },
-  noData: {
-    color: '#475569',
-    textAlign: 'center',
-    paddingVertical: 60,
+  infoCardText: {
+    fontSize: 14,
+    color: '#94A3B8',
+    lineHeight: 22,
   },
   buttonRow: {
     flexDirection: 'row',
@@ -711,25 +737,5 @@ const styles = StyleSheet.create({
   buttonSubtitle: {
     fontSize: 12,
     color: '#94A3B8',
-  },
-  debugBox: {
-    backgroundColor: '#1E293B',
-    padding: 15,
-    borderRadius: 12,
-    marginTop: 20,
-    marginBottom: 40,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  debugTitle: {
-    color: '#F59E0B',
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  debugText: {
-    color: '#94A3B8',
-    fontSize: 11,
-    marginBottom: 4,
   },
 });
