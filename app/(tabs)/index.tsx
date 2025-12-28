@@ -63,17 +63,27 @@ export default function HomeScreen() {
       );
     `);
 
-    await database.execAsync(`
-      CREATE TABLE IF NOT EXISTS urge_sessions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        start_timestamp INTEGER NOT NULL,
-        intensity_before INTEGER,
-        intensity_after INTEGER,
-        intervention_type TEXT,
-        reduction INTEGER,
-        created_at INTEGER
-      );
-    `);
+    // Create urge_sessions table if not exists, with all columns
+    try {
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS urge_sessions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          start_timestamp INTEGER NOT NULL,
+          intensity_before INTEGER,
+          intensity_after INTEGER,
+          intervention_type TEXT,
+          reduction INTEGER,
+          what_helped TEXT,
+          created_at INTEGER
+        );
+      `);
+      
+      // Try to add what_helped column if it doesn't exist (for existing tables)
+      await database.execAsync(`ALTER TABLE urge_sessions ADD COLUMN what_helped TEXT`);
+    } catch (error) {
+      // Column already exists or table created fresh - that's fine
+      console.log('urge_sessions table ready');
+    }
 
     await initDataCollection();
     await initRiskAnalysis();

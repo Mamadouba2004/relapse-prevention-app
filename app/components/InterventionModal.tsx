@@ -34,6 +34,8 @@ export default function InterventionModal({ visible, riskLevel, onClose }: Props
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [showBeforeRating, setShowBeforeRating] = useState(true);
   const [showAfterRating, setShowAfterRating] = useState(false);
+  const [showReflection, setShowReflection] = useState(false);
+  const [whatHelped, setWhatHelped] = useState<string[]>([]);
 
   useEffect(() => {
     loadEmergencyContact();
@@ -277,7 +279,7 @@ export default function InterventionModal({ visible, riskLevel, onClose }: Props
             style={[styles.nextButton, !urgeIntensityAfter && styles.nextButtonDisabled]}
             disabled={!urgeIntensityAfter}
             onPress={async () => {
-              // Update session in database
+              // Update session in database with intensity_after
               const db = await SQLite.openDatabaseAsync('behavior.db');
               const reduction = urgeIntensityBefore! - urgeIntensityAfter!;
               
@@ -286,16 +288,21 @@ export default function InterventionModal({ visible, riskLevel, onClose }: Props
                 [urgeIntensityAfter, reduction, selectedIntervention?.type || 'unknown', sessionId]
               );
               
-              // Reset everything and close
-              setShowAfterRating(false);
-              setShowBeforeRating(true);
-              setUrgeIntensityBefore(null);
-              setUrgeIntensityAfter(null);
-              setSelectedIntervention(null);
-              setSessionId(null);
-              setTapCount(0);
-              
-              onClose();
+              // Show reflection screen ONLY if intervention helped
+              if (reduction > 0) {
+                setShowAfterRating(false);
+                setShowReflection(true);
+              } else {
+                // If didn't help, skip reflection and close
+                setShowAfterRating(false);
+                setShowBeforeRating(true);
+                setUrgeIntensityBefore(null);
+                setUrgeIntensityAfter(null);
+                setSelectedIntervention(null);
+                setSessionId(null);
+                setTapCount(0);
+                onClose();
+              }
             }}
           >
             <Text style={styles.nextButtonText}>
@@ -303,6 +310,111 @@ export default function InterventionModal({ visible, riskLevel, onClose }: Props
             </Text>
           </TouchableOpacity>
         </View>
+      </Modal>
+    );
+  }
+
+  // REFLECTION SCREEN (only shown if intervention helped)
+  if (showReflection && visible) {
+    const helpOptions = [
+      { id: 'breathing', label: '🫁 The breathing rhythm', icon: '🫁' },
+      { id: 'focus', label: '🎯 Having something to focus on', icon: '🎯' },
+      { id: 'care', label: '💙 Knowing someone cares', icon: '💙' },
+      { id: 'distract', label: '⚡ Taking my mind off it', icon: '⚡' },
+      { id: 'time', label: '⏱️ Just giving it time', icon: '⏱️' },
+      { id: 'awareness', label: '✨ Becoming more aware', icon: '✨' },
+    ];
+
+    const toggleHelp = (id: string) => {
+      if (whatHelped.includes(id)) {
+        setWhatHelped(whatHelped.filter(h => h !== id));
+      } else {
+        setWhatHelped([...whatHelped, id]);
+      }
+    };
+
+    return (
+      <Modal visible={visible} animationType="slide" transparent={false}>
+        <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
+          <View style={styles.header}>
+            <Text style={styles.title}>What helped most?</Text>
+            <Text style={styles.subtitle}>
+              Select all that apply. This helps us learn what works for you.
+            </Text>
+          </View>
+
+          <View style={{ padding: 20 }}>
+            {helpOptions.map(option => (
+              <TouchableOpacity
+                key={option.id}
+                style={[
+                  styles.helpOption,
+                  whatHelped.includes(option.id) && styles.helpOptionSelected
+                ]}
+                onPress={() => toggleHelp(option.id)}
+              >
+                <Text style={styles.helpOptionIcon}>{option.icon}</Text>
+                <Text style={[
+                  styles.helpOptionText,
+                  whatHelped.includes(option.id) && styles.helpOptionTextSelected
+                ]}>
+                  {option.label}
+                </Text>
+                {whatHelped.includes(option.id) && (
+                  <Text style={styles.checkmark}>✓</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.nextButton, whatHelped.length === 0 && styles.nextButtonDisabled]}
+            disabled={whatHelped.length === 0}
+            onPress={async () => {
+              // Save reflection to database
+              const db = await SQLite.openDatabaseAsync('behavior.db');
+              
+              await db.runAsync(
+                'UPDATE urge_sessions SET what_helped = ? WHERE id = ?',
+                [JSON.stringify(whatHelped), sessionId]
+              );
+              
+              // Reset everything and close
+              setShowReflection(false);
+              setShowBeforeRating(true);
+              setUrgeIntensityBefore(null);
+              setUrgeIntensityAfter(null);
+              setSelectedIntervention(null);
+              setSessionId(null);
+              setWhatHelped([]);
+              setTapCount(0);
+              
+              onClose();
+            }}
+          >
+            <Text style={styles.nextButtonText}>
+              Complete Session ✓
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.skipTextButton}
+            onPress={async () => {
+              // Skip reflection
+              setShowReflection(false);
+              setShowBeforeRating(true);
+              setUrgeIntensityBefore(null);
+              setUrgeIntensityAfter(null);
+              setSelectedIntervention(null);
+              setSessionId(null);
+              setWhatHelped([]);
+              setTapCount(0);
+              onClose();
+            }}
+          >
+            <Text style={styles.skipText}>Skip this</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </Modal>
     );
   }
@@ -810,5 +922,37 @@ const styles = StyleSheet.create({
     color: '#E2E8F0',
     textAlign: 'center',
     lineHeight: 24,
+  },
+  helpOption: {
+    backgroundColor: '#1E293B',
+    borderWidth: 2,
+    borderColor: '#334155',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  helpOptionSelected: {
+    backgroundColor: '#1E3A8A',
+    borderColor: '#3B82F6',
+  },
+  helpOptionIcon: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  helpOptionText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#94A3B8',
+  },
+  helpOptionTextSelected: {
+    color: '#F1F5F9',
+    fontWeight: '600',
+  },
+  checkmark: {
+    fontSize: 24,
+    color: '#10B981',
+    fontWeight: 'bold',
   },
 });
