@@ -33,6 +33,15 @@ export default function TabLayout() {
   }}
 />
       <Tabs.Screen
+        name="routine"
+        options={{
+          title: 'Routine',
+          tabBarIcon: ({ color, focused }) => (
+            <IconSymbol name={focused ? 'moon.stars.fill' : 'moon.stars'} color={color} size={28} />
+          ),
+        }}
+      />
+      <Tabs.Screen
     name="analytics"
     options={{
       title: 'Progress',

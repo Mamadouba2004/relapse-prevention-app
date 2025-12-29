@@ -2,14 +2,19 @@ import InterventionModal from '@/app/components/InterventionModal';
 import LapseSupportModal from '@/app/components/LapseSupportModal';
 import { initDataCollection } from '@/app/services/dataCollection';
 import { initInterventions, shouldTriggerIntervention } from '@/app/services/interventions';
+import {
+    initNotifications,
+    scheduleDangerHourNotifications,
+    sendTestNotification
+} from '@/app/services/notifications';
 import { useRouter } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import {
-  getCurrentRisk,
-  initRiskAnalysis,
-  RiskAssessment
+    getCurrentRisk,
+    initRiskAnalysis,
+    RiskAssessment
 } from '../services/riskAnalysis';
 
 export default function HomeScreen() {
@@ -90,6 +95,16 @@ export default function HomeScreen() {
     await initDataCollection();
     await initRiskAnalysis();
     await initInterventions();
+
+    // Initialize notifications
+    const notifPermission = await initNotifications();
+    if (notifPermission) {
+      await scheduleDangerHourNotifications();
+      console.log('✅ Notifications enabled and scheduled');
+    } else {
+      console.log('⚠️ Notifications disabled or not available');
+    }
+
     await loadRiskData();
 
     // Check risk every hour (for auto-intervention)
@@ -258,6 +273,18 @@ export default function HomeScreen() {
         <Text style={styles.buttonEmoji}>🛡️</Text>
         <Text style={styles.buttonTitle}>I'm Good</Text>
         <Text style={styles.buttonSubtitle}>Checking in strong</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={[styles.button, { backgroundColor: '#7C3AED', marginTop: 12 }]}
+        onPress={async () => {
+          await sendTestNotification();
+          alert('Test notification scheduled for 3 seconds! Check your lock screen.');
+        }}
+      >
+        <Text style={styles.buttonEmoji}>🔔</Text>
+        <Text style={styles.buttonTitle}>Test Notification</Text>
+        <Text style={styles.buttonSubtitle}>See how alerts work</Text>
       </TouchableOpacity>
 
       <InterventionModal

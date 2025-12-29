@@ -1,12 +1,13 @@
+import { schedulePostLapseSupport } from '@/app/services/notifications';
 import * as SQLite from 'expo-sqlite';
 import React, { useState } from 'react';
 import {
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 interface Props {
@@ -37,6 +38,9 @@ export default function LapseSupportModal({ visible, onClose }: Props) {
       'INSERT INTO lapse_recovery (lapse_timestamp, extra_support_enabled, check_in_frequency_hours, created_at) VALUES (?, ?, ?, ?)',
       [Date.now(), true, 2, Date.now()]
     );
+
+    // Schedule actual notifications
+    await schedulePostLapseSupport();
 
     setSupportScheduled(true);
   };
