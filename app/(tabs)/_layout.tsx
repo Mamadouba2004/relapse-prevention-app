@@ -51,10 +51,18 @@ export default function TabLayout() {
     }}
   />
       <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ color, focused }) => (
+            <IconSymbol name={focused ? 'gear' : 'gear'} color={color} size={28} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="explore"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          href: null, // This hides it from tabs
         }}
       />
     </Tabs>

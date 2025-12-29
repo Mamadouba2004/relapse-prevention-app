@@ -2,19 +2,20 @@ import InterventionModal from '@/app/components/InterventionModal';
 import LapseSupportModal from '@/app/components/LapseSupportModal';
 import { initDataCollection } from '@/app/services/dataCollection';
 import { initInterventions, shouldTriggerIntervention } from '@/app/services/interventions';
+import { predictUrgeRisk } from '@/app/services/mlPredictor';
 import {
-    initNotifications,
-    scheduleDangerHourNotifications,
-    sendTestNotification
+  initNotifications,
+  scheduleDangerHourNotifications,
+  sendTestNotification
 } from '@/app/services/notifications';
 import { useRouter } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import {
-    getCurrentRisk,
-    initRiskAnalysis,
-    RiskAssessment
+  getCurrentRisk,
+  initRiskAnalysis,
+  RiskAssessment
 } from '../services/riskAnalysis';
 
 export default function HomeScreen() {
@@ -24,6 +25,12 @@ export default function HomeScreen() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showIntervention, setShowIntervention] = useState(false);
   const [showLapseSupport, setShowLapseSupport] = useState(false);
+  const [mlPrediction, setMlPrediction] = useState<{
+    probability: number;
+    confidence: string;
+    riskLevel: string;
+    reasoning: string[];
+  } | null>(null);
 
   useEffect(() => {
     checkAndInitApp();
@@ -119,10 +126,13 @@ export default function HomeScreen() {
   const loadRiskData = async () => {
     try {
       const riskLevel = await getCurrentRisk();
+      const prediction = await predictUrgeRisk();
       
       console.log('📊 Current Risk:', riskLevel?.percentage, '% at', new Date().toLocaleTimeString());
+      console.log('🤖 ML Prediction:', prediction);
       
       setRisk(riskLevel);
+      setMlPrediction(prediction);
 
       // Auto-trigger intervention if in danger zone
       if (riskLevel && riskLevel.percentage >= 70) {
@@ -245,6 +255,32 @@ export default function HomeScreen() {
           During your danger hours, interventions may appear automatically.
         </Text>
       </View>
+
+      {mlPrediction && (
+        <View style={styles.mlCard}>
+          <Text style={styles.mlTitle}>🤖 AI Prediction</Text>
+          <View style={styles.mlProbability}>
+            <Text style={styles.mlProbNumber}>
+              {Math.round(mlPrediction.probability * 100)}%
+            </Text>
+            <Text style={styles.mlProbLabel}>
+              Urge probability (next hour)
+            </Text>
+            <Text style={styles.mlConfidence}>
+              {mlPrediction.confidence} confidence
+            </Text>
+          </View>
+          
+          <View style={styles.mlReasoning}>
+            <Text style={styles.mlReasoningTitle}>Why this score:</Text>
+            {mlPrediction.reasoning.map((reason, idx) => (
+              <Text key={idx} style={styles.mlReasoningItem}>
+                • {reason}
+              </Text>
+            ))}
+          </View>
+        </View>
+      )}
 
       <View style={styles.buttonRow}>
         <TouchableOpacity 
@@ -897,5 +933,56 @@ const styles = StyleSheet.create({
   buttonSubtitle: {
     fontSize: 12,
     color: '#94A3B8',
+  },
+  mlCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#7C3AED',
+  },
+  mlTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#C4B5FD',
+    marginBottom: 16,
+  },
+  mlProbability: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  mlProbNumber: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#A78BFA',
+    marginBottom: 4,
+  },
+  mlProbLabel: {
+    fontSize: 14,
+    color: '#94A3B8',
+    marginBottom: 8,
+  },
+  mlConfidence: {
+    fontSize: 12,
+    color: '#64748B',
+    fontStyle: 'italic',
+  },
+  mlReasoning: {
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    padding: 16,
+  },
+  mlReasoningTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#E2E8F0',
+    marginBottom: 12,
+  },
+  mlReasoningItem: {
+    fontSize: 13,
+    color: '#94A3B8',
+    marginBottom: 6,
+    lineHeight: 20,
   },
 });
