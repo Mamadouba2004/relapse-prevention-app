@@ -1,6 +1,7 @@
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import * as SQLite from 'expo-sqlite';
+import { generateContextualNotification } from './llmService';
 
 // Set notification handler (how notifications appear)
 Notifications.setNotificationHandler({
@@ -81,11 +82,14 @@ const scheduleWindowNotification = async (window: string) => {
   // Schedule one check-in per window (first hour of window)
   if (hours.length > 0) {
     const hour = hours[0];
+    
+    // Generate contextual message (will use mock LLM)
+    const message = await generateContextualNotification();
 
     await Notifications.scheduleNotificationAsync({
       content: {
         title: 'Interruption',
-        body: "Just a heads up — this might be a tricky moment. You don't have to do anything.",
+        body: message,
         data: { type: 'danger_hour_check_in', hour },
       },
       trigger: {

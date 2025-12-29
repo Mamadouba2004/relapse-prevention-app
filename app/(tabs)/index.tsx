@@ -5,8 +5,7 @@ import { initInterventions, shouldTriggerIntervention } from '@/app/services/int
 import { predictUrgeRisk } from '@/app/services/mlPredictor';
 import {
   initNotifications,
-  scheduleDangerHourNotifications,
-  sendTestNotification
+  scheduleDangerHourNotifications
 } from '@/app/services/notifications';
 import { useRouter } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
@@ -314,13 +313,30 @@ export default function HomeScreen() {
       <TouchableOpacity 
         style={[styles.button, { backgroundColor: '#7C3AED', marginTop: 12 }]}
         onPress={async () => {
-          await sendTestNotification();
-          alert('Test notification scheduled for 3 seconds! Check your lock screen.');
+          // Generate contextual message using LLM
+          const { generateContextualNotification } = await import('../services/llmService');
+          const message = await generateContextualNotification();
+          
+          // Schedule immediate notification with LLM message
+          const Notifications = await import('expo-notifications');
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: 'Interruption',
+              body: message,
+              data: { type: 'test' },
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+              seconds: 3,
+            },
+          });
+          
+          alert('Smart notification coming in 3 seconds! Check your lock screen.');
         }}
       >
-        <Text style={styles.buttonEmoji}>🔔</Text>
-        <Text style={styles.buttonTitle}>Test Notification</Text>
-        <Text style={styles.buttonSubtitle}>See how alerts work</Text>
+        <Text style={styles.buttonEmoji}>🤖</Text>
+        <Text style={styles.buttonTitle}>Test Smart Notification</Text>
+        <Text style={styles.buttonSubtitle}>See LLM-powered alerts</Text>
       </TouchableOpacity>
 
       <InterventionModal

@@ -2,6 +2,7 @@ import Slider from '@react-native-community/slider';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useState } from 'react';
 import {
+    Alert,
     Linking,
     Modal,
     ScrollView,
@@ -16,6 +17,7 @@ import {
     logInterventionCompleted,
     logInterventionShown
 } from '../services/interventions';
+import { generatePostInterventionInsight } from '../services/llmService';
 
 interface Props {
   visible: boolean;
@@ -377,6 +379,21 @@ export default function InterventionModal({ visible, riskLevel, onClose }: Props
               await db.runAsync(
                 'UPDATE urge_sessions SET what_helped = ? WHERE id = ?',
                 [JSON.stringify(whatHelped), sessionId]
+              );
+              
+              // Generate personalized insight using LLM
+              const reduction = urgeIntensityBefore! - urgeIntensityAfter!;
+              const insight = await generatePostInterventionInsight(
+                selectedIntervention?.type || 'breathing',
+                reduction,
+                whatHelped
+              );
+              
+              // Show the insight
+              Alert.alert(
+                '✨ Insight',
+                insight,
+                [{ text: 'Thanks!', style: 'default' }]
               );
               
               // Reset everything and close
