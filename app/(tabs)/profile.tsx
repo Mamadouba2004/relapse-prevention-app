@@ -297,7 +297,7 @@ export default function ProfileScreen() {
               <LineChart
                 data={chartData}
                 width={screenWidth - 20}
-                height={340}
+                height={260}
                 yAxisSuffix="%"
                 yAxisInterval={1}
                 fromZero={true}
@@ -593,7 +593,7 @@ const styles = StyleSheet.create({
   insightCard: {
     backgroundColor: '#1E293B',
     borderRadius: 12,
-    padding: 14,
+    padding: 16,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#334155',
@@ -601,59 +601,63 @@ const styles = StyleSheet.create({
   insightHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   insightEmoji: {
-    fontSize: 24,
-    marginRight: 10,
+    fontSize: 20,
+    marginRight: 8,
   },
   insightTitle: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#94A3B8',
-    fontWeight: '500',
-    marginBottom: 1,
+    fontWeight: '600',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   insightTime: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#F1F5F9',
   },
   insightBody: {
     borderRadius: 10,
-    padding: 12,
+    padding: 0,
   },
   insightRisk: {
     alignItems: 'center',
-    marginBottom: 8,
-    paddingBottom: 8,
+    marginBottom: 12,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(148, 163, 184, 0.1)',
   },
   insightRiskLabel: {
-    fontSize: 9,
+    fontSize: 10,
     color: '#64748B',
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 0,
+    marginBottom: 4,
   },
   insightRiskValue: {
-    fontSize: 56,
+    fontSize: 42,
     fontWeight: 'bold',
   },
   insightTip: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    paddingHorizontal: 4,
   },
   tipIcon: {
-    fontSize: 14,
-    marginRight: 8,
+    fontSize: 16,
+    marginRight: 6,
+    marginTop: 1,
   },
   insightTipText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 13,
     color: '#94A3B8',
-    lineHeight: 18,
+    lineHeight: 20,
   },
   
   // ===== WEEKLY WINS CARD STYLES =====
