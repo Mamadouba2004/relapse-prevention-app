@@ -224,4 +224,106 @@ const formatHour = (hour: number): string => {
   return `${hour - 12} PM`;
 };
 
+// Get live risk score for current hour based on actual database data
+export const getRiskForCurrentHour = async (): Promise<number> => {
+  if (!db) {
+    await initRiskProfile();
+  }
+  if (!db) return 20; // Baseline if DB unavailable
+
+  const currentHour = new Date().getHours();
+  const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+
+  try {
+    // Query urge sessions from the last 7 days for this hour
+    const urgeData = await db.getAllAsync<{ count: number; avg_intensity: number }>(`
+      SELECT 
+        COUNT(*) as count,
+        AVG(intensity_before) as avg_intensity
+      FROM urge_sessions
+      WHERE start_timestamp >= ?
+        AND CAST(strftime('%H', start_timestamp / 1000, 'unixepoch', 'localtime') AS INTEGER) = ?
+    `, [sevenDaysAgo, currentHour]);
+
+    // Also check regular logs (urges) for frequency
+    const logData = await db.getAllAsync<{ urge_count: number }>(`
+      SELECT COUNT(*) as urge_count
+      FROM logs
+      WHERE type = 'urge'
+        AND timestamp >= ?
+        AND CAST(strftime('%H', timestamp / 1000, 'unixepoch', 'localtime') AS INTEGER) = ?
+    `, [sevenDaysAgo, currentHour]);
+
+    const urgeCount = urgeData[0]?.count || 0;
+    const avgIntensity = urgeData[0]?.avg_intensity || 0;
+    const logUrgeCount = logData[0]?.urge_count || 0;
+
+    // If we have real data, calculate risk from it
+    if (urgeCount > 0 || logUrgeCount > 0) {
+      // Base risk from frequency (more urges at this hour = higher risk)
+      // Scale: 1 urge/week = +10%, 2 = +20%, etc, capped at +50%
+      const frequencyRisk = Math.min(50, (urgeCount + logUrgeCount) * 10);
+      
+      // Add intensity component (avg intensity contributes directly)
+      const intensityRisk = avgIntensity * 0.5; // 50% of intensity
+      
+      // Combine with baseline
+      const totalRisk = Math.round(20 + frequencyRisk + intensityRisk);
+      
+      return Math.min(100, Math.max(0, totalRisk));
+    }
+
+    // No real data for this hour - fall back to profile-based calculation
+    const profile = await calculate24HourProfile();
+    return profile[currentHour]?.baseRisk || 20;
+    
+  } catch (error) {
+    console.error('Error getting risk for current hour:', error);
+    // Fallback to profile-based calculation
+    const profile = await calculate24HourProfile();
+    return profile[currentHour]?.baseRisk || 20;
+  }
+};
+
+// Get the next "Safe Harbor" hour (risk < 40%) and time until it
+export const getNextSafeHarbor = async (): Promise<{
+  safeHour: number;
+  hoursUntil: number;
+  minutesUntil: number;
+  label: string;
+} | null> => {
+  const profile = await calculate24HourProfile();
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinutes = now.getMinutes();
+
+  // Look forward up to 24 hours for a safe hour (risk < 40%)
+  for (let offset = 1; offset <= 24; offset++) {
+    const checkHour = (currentHour + offset) % 24;
+    
+    if (profile[checkHour].baseRisk < 40) {
+      // Calculate time until this hour
+      let hoursUntil = offset;
+      let minutesUntil = 60 - currentMinutes;
+      
+      // Adjust if we're counting from next hour
+      if (minutesUntil === 60) {
+        minutesUntil = 0;
+      } else {
+        hoursUntil -= 1;
+      }
+      
+      return {
+        safeHour: checkHour,
+        hoursUntil,
+        minutesUntil,
+        label: formatHour(checkHour),
+      };
+    }
+  }
+
+  // No safe hour found (very high risk profile) - return null
+  return null;
+};
+
 export { formatHour };

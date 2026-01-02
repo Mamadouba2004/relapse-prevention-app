@@ -50,6 +50,161 @@ export const getHourlyPattern = async (): Promise<HourlyPattern[]> => {
   }));
 };
 
+// Get risk score for current hour based on screen_on events over last 7 days
+export const getRiskForCurrentHour = async (): Promise<number> => {
+  if (!db) {
+    await initRiskAnalysis();
+  }
+  if (!db) return 20; // Baseline if DB unavailable
+
+  const currentHour = new Date().getHours();
+  const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+
+  try {
+    // Query screen_on events for this specific hour over the last week
+    const result = await db.getAllAsync<{ avg_count: number }>(`
+      SELECT AVG(daily_count) as avg_count FROM (
+        SELECT 
+          DATE(timestamp / 1000, 'unixepoch', 'localtime') as day,
+          COUNT(*) as daily_count
+        FROM events
+        WHERE event_type = 'screen_on'
+          AND timestamp >= ?
+          AND CAST(strftime('%H', timestamp / 1000, 'unixepoch', 'localtime') AS INTEGER) = ?
+        GROUP BY day
+      )
+    `, [sevenDaysAgo, currentHour]);
+
+    const avgUnlocks = result[0]?.avg_count || 0;
+
+    // Map unlock count to 0-100 risk score:
+    // 0 unlocks = 20% baseline
+    // 1-2 unlocks = 30%
+    // 3-5 unlocks = 50%
+    // 6-9 unlocks = 70%
+    // 10+ unlocks = 90% storm
+    let riskScore: number;
+    
+    if (avgUnlocks === 0) {
+      riskScore = 20; // Baseline - no data for this hour
+    } else if (avgUnlocks <= 2) {
+      riskScore = 20 + (avgUnlocks * 5); // 20-30%
+    } else if (avgUnlocks <= 5) {
+      riskScore = 30 + ((avgUnlocks - 2) * 6.67); // 30-50%
+    } else if (avgUnlocks <= 9) {
+      riskScore = 50 + ((avgUnlocks - 5) * 5); // 50-70%
+    } else {
+      // 10+ unlocks - storm territory
+      riskScore = 70 + Math.min((avgUnlocks - 9) * 4, 20); // 70-90%, cap at 90
+    }
+
+    // Round to integer and clamp between 0-100
+    return Math.min(100, Math.max(0, Math.round(riskScore)));
+    
+  } catch (error) {
+    console.error('Error getting risk for current hour:', error);
+    return 20; // Baseline on error
+  }
+};
+
+// Helper function to calculate risk for a specific hour based on screen_on data
+const getRiskForHour = async (hour: number): Promise<number> => {
+  if (!db) return 20;
+
+  const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+
+  try {
+    const result = await db.getAllAsync<{ avg_count: number }>(`
+      SELECT AVG(daily_count) as avg_count FROM (
+        SELECT 
+          DATE(timestamp / 1000, 'unixepoch', 'localtime') as day,
+          COUNT(*) as daily_count
+        FROM events
+        WHERE event_type = 'screen_on'
+          AND timestamp >= ?
+          AND CAST(strftime('%H', timestamp / 1000, 'unixepoch', 'localtime') AS INTEGER) = ?
+        GROUP BY day
+      )
+    `, [sevenDaysAgo, hour]);
+
+    const avgUnlocks = result[0]?.avg_count || 0;
+
+    // Same mapping as getRiskForCurrentHour
+    let riskScore: number;
+    if (avgUnlocks === 0) {
+      riskScore = 20;
+    } else if (avgUnlocks <= 2) {
+      riskScore = 20 + (avgUnlocks * 5);
+    } else if (avgUnlocks <= 5) {
+      riskScore = 30 + ((avgUnlocks - 2) * 6.67);
+    } else if (avgUnlocks <= 9) {
+      riskScore = 50 + ((avgUnlocks - 5) * 5);
+    } else {
+      riskScore = 70 + Math.min((avgUnlocks - 9) * 4, 20);
+    }
+
+    return Math.min(100, Math.max(0, Math.round(riskScore)));
+  } catch {
+    return 20;
+  }
+};
+
+// Get time until risk drops below 40% (Safe Harbor)
+// Scans the next 12 hours of risk data
+export const getSafeHarborTime = async (): Promise<{
+  timeRemaining: string;
+  safeHour: number;
+  safeHourLabel: string;
+} | null> => {
+  if (!db) {
+    await initRiskAnalysis();
+  }
+  if (!db) return null;
+
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinutes = now.getMinutes();
+
+  // Scan the next 12 hours
+  for (let offset = 1; offset <= 12; offset++) {
+    const checkHour = (currentHour + offset) % 24;
+    const riskForHour = await getRiskForHour(checkHour);
+
+    if (riskForHour < 40) {
+      // Found safe harbor! Calculate time remaining
+      let hoursUntil = offset;
+      let minutesUntil = 60 - currentMinutes;
+
+      if (minutesUntil === 60) {
+        minutesUntil = 0;
+      } else {
+        hoursUntil -= 1;
+      }
+
+      // Format the safe hour label
+      let safeHourLabel: string;
+      if (checkHour === 0) {
+        safeHourLabel = '12 AM';
+      } else if (checkHour < 12) {
+        safeHourLabel = `${checkHour} AM`;
+      } else if (checkHour === 12) {
+        safeHourLabel = '12 PM';
+      } else {
+        safeHourLabel = `${checkHour - 12} PM`;
+      }
+
+      return {
+        timeRemaining: `${hoursUntil}h ${minutesUntil}m`,
+        safeHour: checkHour,
+        safeHourLabel,
+      };
+    }
+  }
+
+  // No safe harbor found in next 12 hours
+  return null;
+};
+
 // Calculate risk level based on patterns
 export const calculateRiskLevel = async (): Promise<RiskAssessment> => {
   const hourlyPattern = await getHourlyPattern();

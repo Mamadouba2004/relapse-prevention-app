@@ -81,23 +81,61 @@ const scheduleWindowNotification = async (window: string) => {
 
   // Schedule one check-in per window (first hour of window)
   if (hours.length > 0) {
-    const hour = hours[0];
+    const targetHour = hours[0];
+    
+    // Calculate next occurrence in LOCAL time
+    const now = new Date();
+    const localHour = now.getHours();
+    const localMinute = now.getMinutes();
+    
+    // Create target date for today at the target hour (local time)
+    const targetDate = new Date();
+    targetDate.setHours(targetHour, 0, 0, 0);
+    
+    // If target time has passed today, schedule for tomorrow
+    if (targetHour < localHour || (targetHour === localHour && localMinute > 0)) {
+      targetDate.setDate(targetDate.getDate() + 1);
+    }
     
     // Generate contextual message (will use mock LLM)
     const message = await generateContextualNotification();
+    
+    // Log for debugging
+    console.log(`📅 Scheduling "${window}" notification:`);
+    console.log(`   Target hour: ${targetHour}:00 (local time)`);
+    console.log(`   Current local time: ${localHour}:${localMinute.toString().padStart(2, '0')}`);
+    console.log(`   Will trigger at: ${targetDate.toLocaleString()}`);
+    console.log(`   Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
 
+    // Use DATE trigger for first occurrence (guaranteed local time)
     await Notifications.scheduleNotificationAsync({
       content: {
         title: 'Interruption',
         body: message,
-        data: { type: 'danger_hour_check_in', hour },
+        data: { type: 'danger_hour_check_in', hour: targetHour, window },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: targetDate,
+      },
+    });
+    
+    // Also schedule recurring DAILY trigger for subsequent days
+    // Note: DAILY trigger uses local timezone on most devices
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Interruption',
+        body: message,
+        data: { type: 'danger_hour_recurring', hour: targetHour, window },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour: hour,
+        hour: targetHour,
         minute: 0,
       },
     });
+    
+    console.log(`   ✅ Scheduled both immediate and recurring notifications`);
   }
 };
 
@@ -174,6 +212,26 @@ export const sendTestNotification = async () => {
 // Get scheduled notifications (for debugging)
 export const getScheduledNotifications = async () => {
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  console.log('Scheduled notifications:', scheduled.length);
+  console.log('📋 Scheduled notifications:', scheduled.length);
+  
+  // Log details for each notification
+  scheduled.forEach((notif, index) => {
+    const trigger = notif.trigger as any;
+    console.log(`\n  [${index + 1}] ${notif.content.title}`);
+    console.log(`      Body: ${notif.content.body?.substring(0, 50)}...`);
+    console.log(`      Data: ${JSON.stringify(notif.content.data)}`);
+    
+    if (trigger.type === 'daily') {
+      console.log(`      Trigger: DAILY at ${trigger.hour}:${String(trigger.minute || 0).padStart(2, '0')} local time`);
+    } else if (trigger.type === 'date') {
+      const triggerDate = new Date(trigger.date || trigger.value);
+      console.log(`      Trigger: DATE - ${triggerDate.toLocaleString()}`);
+    } else if (trigger.type === 'timeInterval') {
+      console.log(`      Trigger: TIME_INTERVAL - ${trigger.seconds} seconds`);
+    } else {
+      console.log(`      Trigger: ${JSON.stringify(trigger)}`);
+    }
+  });
+  
   return scheduled;
 };
