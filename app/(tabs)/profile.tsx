@@ -272,20 +272,20 @@ export default function ProfileScreen() {
             <Pressable
               onPress={(event) => {
                 const { locationX } = event.nativeEvent;
-                const chartWidth = screenWidth - 20;
+                const chartWidth = screenWidth - 8;
                 const chartPadding = 50; // Account for Y-axis labels
                 const usableWidth = chartWidth - chartPadding;
                 const tappedX = locationX - chartPadding;
-                
+
                 // Calculate which of the 5 data points (0-4) is closest
                 const normalizedX = Math.max(0, Math.min(tappedX / usableWidth, 1));
                 const hourIndex = Math.round(normalizedX * 4); // 5 points = indices 0-4
-                
+
                 // Map to actual hours
                 const hourMap = [0, 6, 12, 18, 24];
                 const selectedHour = hourMap[hourIndex] ?? 0;
                 const riskValue = chartDataValues[hourIndex] ?? 0;
-                
+
                 setSelectedHourIndex(hourIndex);
                 setSelectedHourData({
                   hour: selectedHour === 24 ? 0 : selectedHour,
@@ -296,8 +296,8 @@ export default function ProfileScreen() {
             >
               <LineChart
                 data={chartData}
-                width={screenWidth - 20}
-                height={340}
+                width={screenWidth - 8}
+                height={320}
                 yAxisSuffix="%"
                 yAxisInterval={1}
                 fromZero={true}
@@ -489,7 +489,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     paddingHorizontal: 0,
     paddingVertical: 8,
-    marginBottom: 24,
+    marginBottom: 20,
+    marginHorizontal: -4,
   },
   chartTitle: {
     fontSize: 20,
@@ -510,7 +511,7 @@ const styles = StyleSheet.create({
     overflow: 'visible',
     alignItems: 'center',
     position: 'relative',
-    marginHorizontal: -6,
+    marginHorizontal: -10,
   },
   lineChart: {
     marginVertical: 8,
@@ -592,68 +593,74 @@ const styles = StyleSheet.create({
   // ===== INSIGHT CARD STYLES (Compact) =====
   insightCard: {
     backgroundColor: '#1E293B',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#334155',
   },
   insightHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   insightEmoji: {
-    fontSize: 24,
-    marginRight: 10,
+    fontSize: 28,
+    marginRight: 12,
   },
   insightTitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#94A3B8',
     fontWeight: '500',
-    marginBottom: 1,
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   insightTime: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#F1F5F9',
   },
   insightBody: {
-    borderRadius: 10,
-    padding: 12,
+    borderRadius: 12,
+    padding: 0,
   },
   insightRisk: {
     alignItems: 'center',
-    marginBottom: 8,
-    paddingBottom: 8,
+    marginBottom: 16,
+    paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(148, 163, 184, 0.1)',
+    borderBottomColor: 'rgba(148, 163, 184, 0.15)',
   },
   insightRiskLabel: {
-    fontSize: 9,
+    fontSize: 10,
     color: '#64748B',
     fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 0,
+    letterSpacing: 1,
+    marginBottom: 6,
   },
   insightRiskValue: {
-    fontSize: 56,
+    fontSize: 64,
     fontWeight: 'bold',
   },
   insightTip: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    backgroundColor: 'rgba(148, 163, 184, 0.05)',
+    padding: 12,
+    borderRadius: 10,
   },
   tipIcon: {
-    fontSize: 14,
-    marginRight: 8,
+    fontSize: 16,
+    marginRight: 10,
+    marginTop: 1,
   },
   insightTipText: {
     flex: 1,
-    fontSize: 12,
-    color: '#94A3B8',
-    lineHeight: 18,
+    fontSize: 13,
+    color: '#CBD5E1',
+    lineHeight: 20,
   },
   
   // ===== WEEKLY WINS CARD STYLES =====
