@@ -4,17 +4,28 @@ import { initDataCollection } from '@/app/services/dataCollection';
 import { initInterventions, shouldTriggerIntervention } from '@/app/services/interventions';
 import { predictUrgeRisk } from '@/app/services/mlPredictor';
 import {
-  initNotifications,
-  scheduleDangerHourNotifications
+    initNotifications,
+    scheduleDangerHourNotifications
 } from '@/app/services/notifications';
+import {
+    getNextSafeHarbor,
+    getRiskForCurrentHour as getProfileRisk,
+    initRiskProfile
+} from '@/app/services/riskProfile';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
-import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Animated, Dimensions, Easing, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import {
-  getCurrentRisk,
-  initRiskAnalysis,
-  RiskAssessment
+    getCurrentRisk,
+    getSafeHarborTime,
+    getRiskForCurrentHour as getScreenRisk,
+    initRiskAnalysis,
+    RiskAssessment
 } from '../services/riskAnalysis';
 
 export default function HomeScreen() {
@@ -30,10 +41,58 @@ export default function HomeScreen() {
     riskLevel: string;
     reasoning: string[];
   } | null>(null);
+  
+  // Live risk score from database (updated on tab focus)
+  const [liveRiskScore, setLiveRiskScore] = useState<number>(20);
+  const [safeHarbor, setSafeHarbor] = useState<{
+    safeHour: number;
+    hoursUntil: number;
+    minutesUntil: number;
+    label: string;
+  } | null>(null);
+  
+  // Database-based safe harbor (from screen_on events)
+  const [dbSafeHarbor, setDbSafeHarbor] = useState<{
+    timeRemaining: string;
+    safeHour: number;
+    safeHourLabel: string;
+  } | null>(null);
 
   useEffect(() => {
     checkAndInitApp();
   }, []);
+  
+  // Refresh risk data when tab is focused
+  useFocusEffect(
+    useCallback(() => {
+      const refreshRiskData = async () => {
+        await initRiskProfile();
+        await initRiskAnalysis();
+        
+        // Get risk from both sources and combine them
+        const profileRisk = await getProfileRisk(); // Based on urge patterns
+        const screenRisk = await getScreenRisk();   // Based on screen_on events
+        
+        // Combine: weighted average (60% screen activity, 40% urge history)
+        const combinedRisk = Math.round((screenRisk * 0.6) + (profileRisk * 0.4));
+        setLiveRiskScore(combinedRisk);
+        
+        // Get next safe harbor time from profile
+        const nextSafe = await getNextSafeHarbor();
+        setSafeHarbor(nextSafe);
+        
+        // Get safe harbor from database (screen_on based)
+        const dbSafe = await getSafeHarborTime();
+        setDbSafeHarbor(dbSafe);
+        
+        console.log('📊 Tab focused - Screen risk:', screenRisk, '%, Profile risk:', profileRisk, '%, Combined:', combinedRisk, '%');
+        console.log('🏠 Safe harbor (profile):', nextSafe?.label || 'none');
+        console.log('🏠 Safe harbor (DB):', dbSafe?.timeRemaining || 'none', 'until', dbSafe?.safeHourLabel || 'N/A');
+      };
+      
+      refreshRiskData();
+    }, [])
+  );
 
   const checkAndInitApp = async () => {
     const database = await SQLite.openDatabaseAsync('behavior.db');
@@ -214,6 +273,82 @@ export default function HomeScreen() {
     return `${hour - 12} PM`;
   };
 
+  // Get gradient colors based on risk level (Weather metaphor)
+  // Now uses liveRiskScore from database!
+  const getRiskGradient = (): readonly [string, string, ...string[]] => {
+    const percentage = liveRiskScore;
+    if (percentage > 60) return ['#8b0000', '#191919'] as const; // STORM WARNING - deep red
+    if (percentage > 30) return ['#B8860B', '#191919'] as const; // CAUTION - dark goldenrod
+    return ['#1e5128', '#191919'] as const; // CLEAR - deep green
+  };
+
+  // Get weather icon based on risk level
+  const getWeatherIcon = (): keyof typeof MaterialCommunityIcons.glyphMap => {
+    const percentage = liveRiskScore;
+    if (percentage > 60) return 'weather-lightning';
+    if (percentage > 30) return 'weather-rainy';
+    return 'weather-partly-cloudy';
+  };
+
+  // Get risk status text (Weather metaphor)
+  const getRiskStatus = (): string => {
+    const percentage = liveRiskScore;
+    if (percentage > 60) return 'STORM WARNING';
+    if (percentage > 30) return 'CAUTION';
+    return 'CLEAR';
+  };
+
+  // Hope Timer - Now synced with Pattern Map!
+  // Uses safeHarbor from riskProfile service to find next low-risk hour
+  const getHopeTimer = (): string | null => {
+    // Only show timer if risk is elevated (> 40%)
+    if (liveRiskScore <= 40 || !safeHarbor) {
+      return null;
+    }
+    
+    // Use the calculated safe harbor from Pattern Map data
+    return `${safeHarbor.hoursUntil}h ${safeHarbor.minutesUntil}m`;
+  };
+  
+  // Get the safe harbor destination label
+  const getSafeHarborLabel = (): string | null => {
+    if (!safeHarbor || liveRiskScore <= 40) return null;
+    return safeHarbor.label;
+  };
+
+  // Get explanation for transparency tap
+  // Get explanation for transparency tap - now uses live database score
+  const getRiskExplanation = (): string => {
+    const percentage = liveRiskScore;
+    const hour = new Date().getHours();
+    
+    let timeContext = '';
+    if (hour >= 22 || hour < 4) {
+      timeContext = 'late-night hours';
+    } else if (hour >= 18) {
+      timeContext = 'evening hours';
+    } else {
+      timeContext = 'current time patterns';
+    }
+    
+    // More detailed explanation including data source
+    const dataNote = percentage > 30 
+      ? 'Based on your urge patterns over the last 7 days.'
+      : 'You\'re in a typically low-risk period.';
+    
+    return `Why ${percentage}%?\n\n${timeContext.charAt(0).toUpperCase() + timeContext.slice(1)} combined with your personal triggers.\n\n${dataNote}`;
+  };
+
+  // Handle transparency tap on Risk Weather card
+  const handleRiskCardTap = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert(
+      '🔍 Risk Analysis',
+      getRiskExplanation(),
+      [{ text: 'Got it', style: 'default' }]
+    );
+  };
+
   // ONBOARDING COMPONENT
   if (showOnboarding) {
     return <OnboardingFlow 
@@ -230,113 +365,151 @@ export default function HomeScreen() {
     />;
   }
 
+  // Now using live database risk score!
+  const isHighRisk = liveRiskScore > 60;
+  const hopeTimer = getHopeTimer();
+  const safeHarborLabel = getSafeHarborLabel();
+
+  // Animated pulse for weather icon
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  
+  useEffect(() => {
+    const pulseDuration = isHighRisk ? 1500 : 3000; // Faster pulse when high risk
+    
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.1,
+          duration: pulseDuration / 2,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: pulseDuration / 2,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    
+    pulse.start();
+    
+    return () => pulse.stop();
+  }, [isHighRisk]);
+
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.riskHeader}>
-        <Text style={[styles.percentage, { color: risk?.color || '#3B82F6' }]}>
-          {risk?.percentage || 0}%
-        </Text>
-        <Text style={[styles.zoneLabel, { color: risk?.color || '#3B82F6' }]}>
-          {risk ? getZoneLabel(risk.zone) : 'CALCULATING...'}
-        </Text>
-        <Text style={styles.message}>
-          {risk?.message || 'Loading your risk detection...'}
-        </Text>
-        <Text style={styles.tagline}>Support when it matters most</Text>
-      </View>
-
-      <View style={styles.infoCard}>
-        <Text style={styles.infoCardTitle}>How This Works</Text>
-        <Text style={styles.infoCardText}>
-          Right now: {risk?.percentage}% (your current state){'\n\n'}
-          Typical for this hour: Check your Pattern tab{'\n\n'}
-          When you tap "Record Urge", we'll help you through it.{'\n\n'}
-          During your danger hours, interventions may appear automatically.
-        </Text>
-      </View>
-
-      {mlPrediction && (
-        <View style={styles.mlCard}>
-          <Text style={styles.mlTitle}>🤖 AI Prediction</Text>
-          <View style={styles.mlProbability}>
-            <Text style={styles.mlProbNumber}>
-              {Math.round(mlPrediction.probability * 100)}%
-            </Text>
-            <Text style={styles.mlProbLabel}>
-              Urge probability (next hour)
-            </Text>
-            <Text style={styles.mlConfidence}>
-              {mlPrediction.confidence} confidence
-            </Text>
-          </View>
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      {/* Risk Weather Header - Tappable for transparency */}
+      <TouchableOpacity 
+        activeOpacity={0.9}
+        onPress={handleRiskCardTap}
+        style={styles.riskWeatherContainer}
+      >
+        <LinearGradient
+          colors={getRiskGradient()}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.riskWeatherGradient}
+        >
+          <Text style={styles.riskWeatherLabel}>RISK WEATHER</Text>
           
-          <View style={styles.mlReasoning}>
-            <Text style={styles.mlReasoningTitle}>Why this score:</Text>
-            {mlPrediction.reasoning.map((reason, idx) => (
-              <Text key={idx} style={styles.mlReasoningItem}>
-                • {reason}
+          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+            <MaterialCommunityIcons 
+              name={getWeatherIcon()} 
+              size={80} 
+              color="rgba(255,255,255,0.9)" 
+              style={styles.weatherIcon}
+            />
+          </Animated.View>
+          
+          {/* Now using live database risk score! */}
+          <Text style={styles.riskScore}>{liveRiskScore}%</Text>
+          <Text style={[
+            styles.riskStatus,
+            isHighRisk && styles.riskStatusHighlight
+          ]}>
+            {getRiskStatus()}
+          </Text>
+          
+          {/* Risk Peak Timer - Shows when risk is elevated (>40%) */}
+          {liveRiskScore > 40 && dbSafeHarbor && (
+            <Text style={styles.riskPeakTimer}>
+              Risk peak ends in: {dbSafeHarbor.timeRemaining}
+            </Text>
+          )}
+          
+          {/* Hope Timer - Synced with Pattern Map! */}
+          {hopeTimer && safeHarborLabel && (
+            <View style={styles.hopeTimerContainer}>
+              <Text style={styles.hopeTimer}>
+                ⏱️ Clear skies by {safeHarborLabel}
               </Text>
-            ))}
-          </View>
+              <Text style={styles.hopeTimerCountdown}>
+                {hopeTimer} remaining
+              </Text>
+            </View>
+          )}
+        </LinearGradient>
+      </TouchableOpacity>
+
+      {/* Dynamic Intervention Card - Coach-style copy */}
+      {isHighRisk && (
+        <View style={styles.interventionCard}>
+          <Text style={styles.interventionCardTitle}>Intervention Card</Text>
+          <Text style={styles.interventionText}>
+            Hey, I notice you're in a high-risk window. Want a 2-minute reset?
+          </Text>
+          <TouchableOpacity 
+            style={styles.breathingButton}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setShowIntervention(true);
+            }}
+          >
+            <Text style={styles.breathingButtonText}>Start 2-Min Breathing</Text>
+            <MaterialCommunityIcons name="meditation" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
       )}
 
-      <View style={styles.buttonRow}>
+      {/* Primary Action Buttons - Coach-style copy */}
+      <View style={styles.heroButtonRow}>
         <TouchableOpacity 
-          style={[styles.button, styles.urgeButton]}
-          onPress={() => logEvent('urge')}
+          style={[styles.heroButton, styles.urgeHeroButton]}
+          onPress={() => {
+            // Heavy haptic for grounding during urge
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+            logEvent('urge');
+          }}
         >
-          <Text style={styles.buttonEmoji}>🌊</Text>
-          <Text style={styles.buttonTitle}>Record Urge</Text>
-          <Text style={styles.buttonSubtitle}>Get help now</Text>
+          <MaterialCommunityIcons name="waves" size={36} color="#FFFFFF" />
+          <Text style={styles.heroButtonTitle}>I'm Feeling an{'\n'}Urge</Text>
+          <Text style={styles.heroButtonSubtitle}>Ride the wave together</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={[styles.button, styles.lapseButton]}
-          onPress={() => logEvent('lapse')}
+          style={[styles.heroButton, styles.safeHeroButton]}
+          onPress={() => {
+            // Success haptic for positive confirmation
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            logEvent('safe');
+          }}
         >
-          <Text style={styles.buttonEmoji}>⚡</Text>
-          <Text style={styles.buttonTitle}>Record Lapse</Text>
-          <Text style={styles.buttonSubtitle}>It happens - keep going</Text>
+          <MaterialCommunityIcons name="shield-check" size={36} color="#FFFFFF" />
+          <Text style={styles.heroButtonTitle}>I'm Good /{'\n'}Staying Strong</Text>
+          <MaterialCommunityIcons name="lightning-bolt" size={20} color="rgba(255,255,255,0.7)" style={{ marginTop: 4 }} />
         </TouchableOpacity>
       </View>
 
+      {/* Footer Link */}
       <TouchableOpacity 
-        style={[styles.button, styles.safeButton, styles.fullWidthButton]}
-        onPress={() => logEvent('safe')}
+        style={styles.footerLink}
+        onPress={() => logEvent('lapse')}
       >
-        <Text style={styles.buttonEmoji}>🛡️</Text>
-        <Text style={styles.buttonTitle}>I'm Good</Text>
-        <Text style={styles.buttonSubtitle}>Checking in strong</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        style={[styles.button, { backgroundColor: '#7C3AED', marginTop: 12 }]}
-        onPress={async () => {
-          // Generate contextual message using LLM
-          const { generateContextualNotification } = await import('../services/llmService');
-          const message = await generateContextualNotification();
-          
-          // Schedule immediate notification with LLM message
-          const Notifications = await import('expo-notifications');
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: 'Interruption',
-              body: message,
-              data: { type: 'test' },
-            },
-            trigger: {
-              type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-              seconds: 3,
-            },
-          });
-          
-          alert('Smart notification coming in 3 seconds! Check your lock screen.');
-        }}
-      >
-        <Text style={styles.buttonEmoji}>🤖</Text>
-        <Text style={styles.buttonTitle}>Test Smart Notification</Text>
-        <Text style={styles.buttonSubtitle}>See LLM-powered alerts</Text>
+        <Text style={styles.footerText}>
+          Need to log a past event? <Text style={styles.footerLinkText}>Tap here.</Text>
+        </Text>
       </TouchableOpacity>
 
       <InterventionModal
@@ -851,12 +1024,171 @@ const onboardingStyles = StyleSheet.create({
   },
 });
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F172A',
-    padding: 20,
+    backgroundColor: '#000000',
   },
+  contentContainer: {
+    padding: 20,
+    paddingTop: 60,
+    paddingBottom: 40,
+  },
+  
+  // Risk Weather Header
+  riskWeatherContainer: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  riskWeatherGradient: {
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  riskWeatherLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.7)',
+    letterSpacing: 2,
+    marginBottom: 16,
+  },
+  weatherIcon: {
+    marginBottom: 8,
+  },
+  riskScore: {
+    fontSize: 80,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  riskStatus: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    letterSpacing: 3,
+  },
+  riskStatusHighlight: {
+    fontSize: 22,
+    fontWeight: '900',
+    textShadowColor: 'rgba(255, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
+  riskPeakTimer: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  hopeTimerContainer: {
+    marginTop: 16,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  hopeTimer: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '600',
+  },
+  hopeTimerCountdown: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 4,
+  },
+
+  // Intervention Card
+  interventionCard: {
+    backgroundColor: '#2A1A2A',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+  },
+  interventionCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.6)',
+    marginBottom: 8,
+  },
+  interventionText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    marginBottom: 16,
+    lineHeight: 22,
+  },
+  breathingButton: {
+    backgroundColor: '#4A3A4A',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  breathingButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+
+  // Hero Buttons
+  heroButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  heroButton: {
+    flex: 1,
+    borderRadius: 20,
+    paddingVertical: 28,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 140,
+  },
+  urgeHeroButton: {
+    backgroundColor: '#FF6B35',
+  },
+  safeHeroButton: {
+    backgroundColor: '#4AA0A0',
+  },
+  heroButtonTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginTop: 12,
+    lineHeight: 24,
+  },
+  heroButtonSubtitle: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+
+  // Footer
+  footerLink: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  footerText: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  footerLinkText: {
+    color: '#9CA3AF',
+    textDecorationLine: 'underline',
+  },
+
+  // Keep old styles for compatibility (onboarding, etc.)
   riskHeader: {
     alignItems: 'center',
     marginTop: 60,
