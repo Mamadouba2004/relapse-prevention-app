@@ -2,9 +2,10 @@ import * as SQLite from 'expo-sqlite';
 
 // Mock LLM service (simulates Claude API responses)
 // Replace with real API later by changing USE_REAL_API to true
+// Add your Anthropic API key to .env file as EXPO_PUBLIC_ANTHROPIC_API_KEY
 
 const USE_REAL_API = false;
-const ANTHROPIC_API_KEY = 'your-api-key-here'; // Add real key when ready
+const ANTHROPIC_API_KEY = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY || '';
 
 interface MessageContext {
   currentRisk: number;
