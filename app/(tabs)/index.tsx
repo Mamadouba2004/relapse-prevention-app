@@ -4,13 +4,13 @@ import { initDataCollection } from '@/app/services/dataCollection';
 import { initInterventions, shouldTriggerIntervention } from '@/app/services/interventions';
 import { predictUrgeRisk } from '@/app/services/mlPredictor';
 import {
-    initNotifications,
-    scheduleDangerHourNotifications
+  initNotifications,
+  scheduleDangerHourNotifications
 } from '@/app/services/notifications';
 import {
-    getNextSafeHarbor,
-    getRiskForCurrentHour as getProfileRisk,
-    initRiskProfile
+  getNextSafeHarbor,
+  getRiskForCurrentHour as getProfileRisk,
+  initRiskProfile
 } from '@/app/services/riskProfile';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -21,11 +21,11 @@ import * as SQLite from 'expo-sqlite';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Easing, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import {
-    getCurrentRisk,
-    getSafeHarborTime,
-    getRiskForCurrentHour as getScreenRisk,
-    initRiskAnalysis,
-    RiskAssessment
+  getCurrentRisk,
+  getSafeHarborTime,
+  getRiskForCurrentHour as getScreenRisk,
+  initRiskAnalysis,
+  RiskAssessment
 } from '../services/riskAnalysis';
 
 export default function HomeScreen() {
@@ -305,9 +305,9 @@ export default function HomeScreen() {
     if (liveRiskScore <= 40 || !safeHarbor) {
       return null;
     }
-    
+
     // Use the calculated safe harbor from Pattern Map data
-    return `${safeHarbor.hoursUntil}h ${safeHarbor.minutesUntil}m`;
+    return `${safeHarbor.hoursUntil}h${safeHarbor.minutesUntil}m`;
   };
   
   // Get the safe harbor destination label
@@ -543,6 +543,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
     urgeDuration: '',
     emergencyContactName: '',
     emergencyContactPhone: '',
+    usesPhoneAsAlarm: '',
   });
 
   const saveProfile = async () => {
@@ -561,22 +562,24 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
         urge_duration TEXT,
         emergency_contact_name TEXT,
         emergency_contact_phone TEXT,
+        uses_phone_as_alarm INTEGER DEFAULT 0,
         created_at INTEGER
       );
     `);
 
     await db.runAsync(
       `INSERT INTO user_profile (
-        screen_time, 
-        risk_hours, 
-        triggers, 
-        alone_pattern, 
-        day_pattern, 
+        screen_time,
+        risk_hours,
+        triggers,
+        alone_pattern,
+        day_pattern,
         urge_duration,
         emergency_contact_name,
         emergency_contact_phone,
+        uses_phone_as_alarm,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.screenTime,
         JSON.stringify(data.riskHours),
@@ -586,6 +589,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
         data.urgeDuration,
         data.emergencyContactName,
         data.emergencyContactPhone,
+        data.usesPhoneAsAlarm === 'yes' ? 1 : 0,
         Date.now()
       ]
     );
@@ -609,6 +613,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
       case 5: return data.urgeDuration !== '';
       case 6: return data.emergencyContactName !== '' && data.emergencyContactPhone !== '';
       case 7: return data.dayPattern !== '';
+      case 8: return data.usesPhoneAsAlarm !== '';
       default: return false;
     }
   };
@@ -855,15 +860,46 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
             ))}
           </>
         );
+
+      case 8:
+        return (
+          <>
+            <Text style={onboardingStyles.title}>Phone as alarm? ⏰</Text>
+            <Text style={onboardingStyles.subtitle}>
+              Do you use your phone as your alarm clock?
+            </Text>
+
+            {[
+              { label: 'Yes, I need my phone nearby', value: 'yes' },
+              { label: 'No, I use a separate alarm', value: 'no' },
+            ].map(option => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  onboardingStyles.optionButton,
+                  data.usesPhoneAsAlarm === option.value && onboardingStyles.optionSelected
+                ]}
+                onPress={() => setData({...data, usesPhoneAsAlarm: option.value})}
+              >
+                <Text style={[
+                  onboardingStyles.optionText,
+                  data.usesPhoneAsAlarm === option.value && onboardingStyles.optionTextSelected
+                ]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </>
+        );
     }
   };
 
   return (
     <ScrollView style={onboardingStyles.container}>
       <View style={onboardingStyles.progressContainer}>
-        <Text style={onboardingStyles.progressText}>Step {step} of 7</Text>
+        <Text style={onboardingStyles.progressText}>Step {step} of 8</Text>
         <View style={onboardingStyles.progressBar}>
-          <View style={[onboardingStyles.progressFill, { width: `${(step / 7) * 100}%` }]} />
+          <View style={[onboardingStyles.progressFill, { width: `${(step / 8) * 100}%` }]} />
         </View>
       </View>
 
@@ -886,7 +922,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
           ]}
           disabled={!canProceed()}
           onPress={() => {
-            if (step === 7) {
+            if (step === 8) {
               saveProfile();
             } else {
               setStep(step + 1);
@@ -894,7 +930,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
           }}
         >
           <Text style={onboardingStyles.nextButtonText}>
-            {step === 7 ? 'Complete Setup ✓' : 'Next →'}
+            {step === 8 ? 'Complete Setup ✓' : 'Next →'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -1084,7 +1120,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   hopeTimerContainer: {
-    marginTop: 16,
+    marginTop: 12,
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.2)',
     paddingVertical: 10,
@@ -1099,7 +1135,7 @@ const styles = StyleSheet.create({
   hopeTimerCountdown: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.5)',
-    marginTop: 4,
+    marginTop: 0,
   },
 
   // Intervention Card

@@ -1,14 +1,15 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useState } from 'react';
 import { Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import {
-    calculate24HourProfile,
-    formatHour,
-    getPeakDangerWindow,
-    HourlyRiskProfile,
-    initRiskProfile
+  calculate24HourProfile,
+  formatHour,
+  getPeakDangerWindow,
+  HourlyRiskProfile,
+  initRiskProfile
 } from '../services/riskProfile';
 
 export default function ProfileScreen() {
@@ -114,16 +115,16 @@ export default function ProfileScreen() {
   const timeColors = getTimeBasedGradient();
   const screenWidth = Dimensions.get('window').width;
 
-  // Prepare LineChart data - use 5 points for cleaner labels
-  const chartDataValues = profileData.length > 0 
-    ? [...profileData.filter((_, i) => i % 6 === 0).map(p => p.baseRisk), profileData[0]?.baseRisk || 20]
-    : [35, 20, 25, 45, 35];
-  
+  // Prepare LineChart data - use 13 points (every 2 hours) for better tap precision
+  const chartDataValues = profileData.length > 0
+    ? [...profileData.filter((_, i) => i % 2 === 0).map(p => p.baseRisk), profileData[0]?.baseRisk || 20]
+    : [35, 30, 25, 20, 22, 25, 30, 35, 40, 45, 42, 38, 35];
+
   const chartData = {
-    labels: ['12 AM', '6 AM', '12 PM', '6 PM', '12 AM'],
+    labels: ['12A', '', '', '6A', '', '', '12P', '', '', '6P', '', '', '12A'],
     datasets: [{
       data: chartDataValues,
-      strokeWidth: 3,
+      strokeWidth: 5,
     }]
   };
 
@@ -136,7 +137,7 @@ export default function ProfileScreen() {
   const chartWidth = screenWidth - 40;
   const chartHeight = 300;
   const chartPaddingLeft = 45; // Y-axis labels width
-  const chartPaddingRight = 16;
+  const chartPaddingRight = 40;
   const chartPaddingTop = 16;
   const chartPaddingBottom = 40; // X-axis labels height
   const usableWidth = chartWidth - chartPaddingLeft - chartPaddingRight;
@@ -192,16 +193,22 @@ export default function ProfileScreen() {
   // Hourly tips - contextual advice based on time of day
   const hourlyTips: { [key: number]: string } = {
     0: "12 AM: Phone in another room. The urge can't outlast your sleep.",
+    2: "2 AM: Very late. If awake, this is a high-risk window. Stay grounded.",
     4: "4 AM: If you're awake, try a glass of water and deep breaths. This window passes.",
+    6: "6 AM: Early morning. Fresh start energy. Use it wisely.",
     8: "8 AM: Morning momentum matters. Start your day with intention.",
+    10: "10 AM: Mid-morning focus time. Keep devices purposeful.",
     12: "12 PM: Midday check-in. How's your energy? Take a short walk.",
+    14: "2 PM: Post-lunch dip. Move your body, don't reach for your phone.",
     16: "4 PM: Afternoon slump is real. Stand up, stretch, reset.",
+    18: "6 PM: Evening transition. Set boundaries before night falls.",
     20: "8 PM: Evening wind-down begins. Put devices on Do Not Disturb.",
+    22: "10 PM: Late night. High-risk window starting. Prepare accountability.",
   };
 
-  // Get tip for selected hour (maps to nearest 4-hour block)
+  // Get tip for selected hour (maps to every 2-hour block)
   const getTipForHour = (index: number): string => {
-    const hourMap = [0, 4, 8, 12, 16, 20]; // Chart labels map to these hours
+    const hourMap = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 0]; // Every 2 hours
     const hour = hourMap[index] ?? 0;
     return hourlyTips[hour] || "Tap a point on the chart to see a tip for that hour.";
   };
@@ -210,11 +217,11 @@ export default function ProfileScreen() {
   const handleDataPointClick = (data: { index: number; value: number; x: number; y: number }) => {
     setSelectedHourIndex(data.index);
     setTooltipPos({ x: data.x, y: data.y, value: data.value });
-    
-    // Map index to actual hour (0, 4, 8, 12, 16, 20, 24->0)
-    const hourMap = [0, 4, 8, 12, 16, 20, 0];
+
+    // Map index to actual hour (every 2 hours: 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 0)
+    const hourMap = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 0];
     const selectedHour = hourMap[data.index] ?? 0;
-    
+
     setSelectedHourData({
       hour: selectedHour,
       risk: Math.round(data.value),
@@ -272,32 +279,35 @@ export default function ProfileScreen() {
             <Pressable
               onPress={(event) => {
                 const { locationX } = event.nativeEvent;
-                const chartWidth = screenWidth - 20;
+                const chartWidth = screenWidth + 20; // Wider chart
                 const chartPadding = 50; // Account for Y-axis labels
-                const usableWidth = chartWidth - chartPadding;
+                const usableWidth = chartWidth - chartPadding - 20; // Adjust for right padding
                 const tappedX = locationX - chartPadding;
-                
-                // Calculate which of the 5 data points (0-4) is closest
+
+                // Calculate which of the 13 data points (0-12) is closest
                 const normalizedX = Math.max(0, Math.min(tappedX / usableWidth, 1));
-                const hourIndex = Math.round(normalizedX * 4); // 5 points = indices 0-4
-                
-                // Map to actual hours
-                const hourMap = [0, 6, 12, 18, 24];
+                const hourIndex = Math.round(normalizedX * 12); // 13 points = indices 0-12
+
+                // Map to actual hours (every 2 hours)
+                const hourMap = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 0];
                 const selectedHour = hourMap[hourIndex] ?? 0;
                 const riskValue = chartDataValues[hourIndex] ?? 0;
-                
+
+                // Haptic feedback
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
                 setSelectedHourIndex(hourIndex);
                 setSelectedHourData({
                   hour: selectedHour === 24 ? 0 : selectedHour,
                   risk: Math.round(riskValue),
-                  label: chartData.labels[hourIndex] || '12 AM',
+                  label: formatHour(selectedHour),
                 });
               }}
             >
               <LineChart
                 data={chartData}
-                width={screenWidth - 20}
-                height={340}
+                width={screenWidth + 20}
+                height={420}
                 yAxisSuffix="%"
                 yAxisInterval={1}
                 fromZero={true}
@@ -315,6 +325,7 @@ export default function ProfileScreen() {
                   fillShadowGradientOpacity: 0.7,
                   fillShadowGradientFrom: '#DC2626',
                   fillShadowGradientTo: '#14B8A6',
+                  paddingRight: 0,
                   style: {
                     borderRadius: 0,
                   },
@@ -322,7 +333,7 @@ export default function ProfileScreen() {
                     r: '0',
                   },
                   propsForLabels: {
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: '500',
                   },
                   propsForBackgroundLines: {
@@ -369,7 +380,7 @@ export default function ProfileScreen() {
           <Text style={styles.insightEmoji}>🎯</Text>
           <View>
             <Text style={styles.insightTitle}>
-              {selectedHourData ? 'Selected Hour' : 'Peak Challenge Window'}
+              {selectedHourData ? 'Selected Hour' : 'High-Risk Window'}
             </Text>
             <Text style={styles.insightTime}>
               {selectedHourData 
@@ -487,21 +498,22 @@ const styles = StyleSheet.create({
   // ===== HERO CHART STYLES (Floating - No Box) =====
   heroChartContainer: {
     backgroundColor: 'transparent',
-    paddingHorizontal: 0,
-    paddingVertical: 8,
-    marginBottom: 24,
+    paddingHorizontal: 5,
+    paddingTop: 10,
+    paddingBottom: 0,
+    marginBottom: 0,
   },
   chartTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#F1F5F9',
-    marginBottom: 4,
+    marginBottom: 6,
     paddingHorizontal: 4,
   },
   chartSubtitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#64748B',
-    marginBottom: 16,
+    marginBottom: 18,
     paddingHorizontal: 4,
   },
   lineChartWrapper: {
@@ -510,14 +522,14 @@ const styles = StyleSheet.create({
     overflow: 'visible',
     alignItems: 'center',
     position: 'relative',
-    marginHorizontal: -6,
+    marginHorizontal: -20,
   },
   lineChart: {
     marginVertical: 8,
     borderRadius: 16,
   },
   loadingContainer: {
-    height: 300,
+    height: 420,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -566,9 +578,10 @@ const styles = StyleSheet.create({
   legendContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 20,
-    marginTop: 4,
-    paddingTop: 8,
+    gap: 24,
+    marginTop: -15,
+    paddingTop: 0,
+    marginBottom: 10,
     borderTopWidth: 0,
     borderTopColor: 'transparent',
   },
@@ -577,68 +590,70 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
   },
   legendText: {
-    fontSize: 10,
+    fontSize: 11,
     color: '#94A3B8',
-    fontWeight: '500',
-    opacity: 0.5,
+    fontWeight: '600',
+    opacity: 0.7,
   },
   
-  // ===== INSIGHT CARD STYLES (Compact) =====
+  // ===== INSIGHT CARD STYLES (Optimized) =====
   insightCard: {
     backgroundColor: '#1E293B',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
+    borderRadius: 14,
+    padding: 18,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#334155',
   },
   insightHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 14,
   },
   insightEmoji: {
-    fontSize: 24,
-    marginRight: 10,
+    fontSize: 28,
+    marginRight: 12,
   },
   insightTitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#94A3B8',
-    fontWeight: '500',
-    marginBottom: 1,
+    fontWeight: '600',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   insightTime: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#F1F5F9',
   },
   insightBody: {
     borderRadius: 10,
-    padding: 12,
+    padding: 0,
   },
   insightRisk: {
     alignItems: 'center',
-    marginBottom: 8,
-    paddingBottom: 8,
+    marginBottom: 14,
+    paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(148, 163, 184, 0.1)',
+    borderBottomColor: 'rgba(148, 163, 184, 0.15)',
   },
   insightRiskLabel: {
-    fontSize: 9,
+    fontSize: 10,
     color: '#64748B',
     fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 0,
+    letterSpacing: 0.8,
+    marginBottom: 4,
   },
   insightRiskValue: {
-    fontSize: 56,
+    fontSize: 48,
     fontWeight: 'bold',
   },
   insightTip: {
@@ -646,14 +661,14 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   tipIcon: {
-    fontSize: 14,
-    marginRight: 8,
+    fontSize: 16,
+    marginRight: 10,
   },
   insightTipText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 13,
     color: '#94A3B8',
-    lineHeight: 18,
+    lineHeight: 20,
   },
   
   // ===== WEEKLY WINS CARD STYLES =====
