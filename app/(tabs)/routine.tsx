@@ -1,14 +1,15 @@
+import * as Haptics from 'expo-haptics';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  Animated,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
-
 interface RoutineItem {
   id: string;
   label: string;
@@ -16,21 +17,95 @@ interface RoutineItem {
   completed: boolean;
 }
 
+const ChecklistItem = ({ item, onPress, disabled }: { item: RoutineItem, onPress: () => void, disabled: boolean }) => {
+  const fadeAnim = React.useRef(new Animated.Value(item.completed ? 1 : 0)).current;
+
+  React.useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: item.completed ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [item.completed]);
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.checklistItem,
+        item.completed && styles.checklistItemCompleted
+      ]}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Text style={styles.itemEmoji}>{item.emoji}</Text>
+      <Text style={[
+        styles.itemLabel,
+        item.completed && styles.itemLabelCompleted
+      ]}>
+        {item.label}
+      </Text>
+      <View style={[
+        styles.checkbox,
+        item.completed && styles.checkboxChecked
+      ]}>
+        <Animated.View style={{ opacity: fadeAnim }}>
+          <Text style={styles.checkmark}>✓</Text>
+        </Animated.View>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
 export default function RoutineScreen() {
-  const [routineEnabled, setRoutineEnabled] = useState(false);
-  const [routineItems, setRoutineItems] = useState<RoutineItem[]>([
-    { id: 'phone_bedroom', label: 'Phone charging outside bedroom', emoji: '📱', completed: false },
-    { id: 'bedtime_set', label: 'Set bedtime alarm', emoji: '⏰', completed: false },
-    { id: 'social_media_closed', label: 'Close all social media apps', emoji: '📵', completed: false },
-    { id: 'read_book', label: 'Read for 15 minutes', emoji: '📖', completed: false },
-    { id: 'check_in', label: 'Evening check-in complete', emoji: '✓', completed: false },
-  ]);
+  const [routineItems, setRoutineItems] = useState<RoutineItem[]>([]);
   const [completionStreak, setCompletionStreak] = useState(0);
   const [todayCompleted, setTodayCompleted] = useState(false);
+  const [usesPhoneAsAlarm, setUsesPhoneAsAlarm] = useState(false);
+  
+  const progressAnim = React.useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     loadRoutineStatus();
   }, []);
+
+  // Auto-complete routine when all items are checked
+  useEffect(() => {
+    const allCompleted = routineItems.every(item => item.completed);
+
+    if (allCompleted && !todayCompleted && routineItems.length > 0) {
+      // Auto-complete routine
+      saveRoutine(true);
+
+      // Haptic feedback for success
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, [routineItems, todayCompleted]);
+
+  const completedCount = routineItems.filter(i => i.completed).length;
+  const progressPercent = routineItems.length > 0 ? Math.round((completedCount / routineItems.length) * 100) : 0;
+
+  useEffect(() => {
+    Animated.timing(progressAnim, {
+      toValue: progressPercent,
+      duration: 500,
+      useNativeDriver: false,
+    }).start();
+  }, [progressPercent]);
+
+  // Helper functions to get routine items based on user preference
+  const getStandardRoutine = (): RoutineItem[] => [
+    { id: 'phone_bedroom', label: 'Phone charging outside bedroom', emoji: '📱', completed: false },
+    { id: 'bedtime_set', label: 'Set bedtime alarm', emoji: '⏰', completed: false },
+    { id: 'social_media_closed', label: 'Close all social media apps', emoji: '📵', completed: false },
+    { id: 'read_book', label: 'Read for 5-10 minutes', emoji: '📖', completed: false },
+  ];
+
+  const getPhoneAsAlarmRoutine = (): RoutineItem[] => [
+    { id: 'dnd_enabled', label: 'Enable Do Not Disturb until alarm', emoji: '🔕', completed: false },
+    { id: 'phone_across_room', label: 'Place phone face-down across room', emoji: '📱', completed: false },
+    { id: 'close_apps', label: 'Close all apps except Clock', emoji: '📵', completed: false },
+    { id: 'read_book', label: 'Read for 5-10 minutes', emoji: '📖', completed: false },
+  ];
 
   const loadRoutineStatus = async () => {
     const db = await SQLite.openDatabaseAsync('behavior.db');
@@ -47,9 +122,32 @@ export default function RoutineScreen() {
         );
       `);
 
+      // Migration: Ensure uses_phone_as_alarm column exists in user_profile
+      try {
+        await db.execAsync('ALTER TABLE user_profile ADD COLUMN uses_phone_as_alarm INTEGER DEFAULT 0');
+      } catch (e) {
+        // Column likely already exists or table doesn't exist, ignore
+      }
+
+      // Load user preference for phone as alarm
+      let needsPhone = false;
+      try {
+        const profileResult = await db.getAllAsync<{ uses_phone_as_alarm: number }>(
+          'SELECT uses_phone_as_alarm FROM user_profile LIMIT 1'
+        );
+        needsPhone = profileResult[0]?.uses_phone_as_alarm === 1;
+      } catch (error) {
+        console.log('Could not read user profile preference, using default');
+      }
+
+      setUsesPhoneAsAlarm(needsPhone);
+
+      // Set routine items based on preference
+      const items = needsPhone ? getPhoneAsAlarmRoutine() : getStandardRoutine();
+
       // Check if routine was completed today
       const today = new Date().toISOString().split('T')[0];
-      
+
       const todayResult = await db.getAllAsync<{
         items_completed: string;
         fully_completed: number;
@@ -60,13 +158,15 @@ export default function RoutineScreen() {
 
       if (todayResult.length > 0) {
         const completedItems = JSON.parse(todayResult[0].items_completed) as string[];
-        setRoutineItems(prev => 
-          prev.map(item => ({
+        setRoutineItems(
+          items.map(item => ({
             ...item,
             completed: completedItems.includes(item.id)
           }))
         );
         setTodayCompleted(todayResult[0].fully_completed === 1);
+      } else {
+        setRoutineItems(items);
       }
 
       // Calculate streak
@@ -74,6 +174,8 @@ export default function RoutineScreen() {
 
     } catch (error) {
       console.error('Error loading routine:', error);
+      // Fallback to standard routine if there's an error
+      setRoutineItems(getStandardRoutine());
     }
   };
 
@@ -112,29 +214,13 @@ export default function RoutineScreen() {
       return;
     }
 
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
     setRoutineItems(prev =>
       prev.map(item =>
         item.id === itemId ? { ...item, completed: !item.completed } : item
       )
     );
-  };
-
-  const completeRoutine = async () => {
-    const allCompleted = routineItems.every(item => item.completed);
-
-    if (!allCompleted) {
-      Alert.alert(
-        'Incomplete Routine',
-        'Some items aren\'t checked yet. Complete them or skip for today?',
-        [
-          { text: 'Keep Working', style: 'cancel' },
-          { text: 'Skip & Complete', onPress: () => saveRoutine(false) }
-        ]
-      );
-      return;
-    }
-
-    await saveRoutine(true);
   };
 
   const saveRoutine = async (fullyCompleted: boolean) => {
@@ -186,8 +272,10 @@ export default function RoutineScreen() {
     );
   };
 
-  const completedCount = routineItems.filter(i => i.completed).length;
-  const progressPercent = Math.round((completedCount / routineItems.length) * 100);
+  const widthInterpolated = progressAnim.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+  });
 
   return (
     <ScrollView style={styles.container}>
@@ -214,7 +302,7 @@ export default function RoutineScreen() {
           <Text style={styles.progressPercent}>{progressPercent}%</Text>
         </View>
         <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
+          <Animated.View style={[styles.progressFill, { width: widthInterpolated }]} />
         </View>
       </View>
 
@@ -223,60 +311,30 @@ export default function RoutineScreen() {
         <Text style={styles.sectionTitle}>Tonight's Routine</Text>
         
         {routineItems.map((item) => (
-          <TouchableOpacity
+          <ChecklistItem
             key={item.id}
-            style={[
-              styles.checklistItem,
-              item.completed && styles.checklistItemCompleted
-            ]}
+            item={item}
             onPress={() => toggleItem(item.id)}
             disabled={todayCompleted}
-          >
-            <Text style={styles.itemEmoji}>{item.emoji}</Text>
-            <Text style={[
-              styles.itemLabel,
-              item.completed && styles.itemLabelCompleted
-            ]}>
-              {item.label}
-            </Text>
-            <View style={[
-              styles.checkbox,
-              item.completed && styles.checkboxChecked
-            ]}>
-              {item.completed && (
-                <Text style={styles.checkmark}>✓</Text>
-              )}
-            </View>
-          </TouchableOpacity>
+          />
         ))}
       </View>
 
-      {/* Action Buttons */}
-      {!todayCompleted ? (
-        <TouchableOpacity
-          style={[
-            styles.completeButton,
-            completedCount === 0 && styles.completeButtonDisabled
-          ]}
-          onPress={completeRoutine}
-          disabled={completedCount === 0}
-        >
-          <Text style={styles.completeButtonText}>
-            ✓ Complete Evening Routine
-          </Text>
-        </TouchableOpacity>
-      ) : (
+      {/* Completion Status */}
+      {todayCompleted && (
         <View style={styles.completedCard}>
-          <Text style={styles.completedEmoji}>✨</Text>
-          <Text style={styles.completedTitle}>Routine Complete!</Text>
-          <Text style={styles.completedText}>
-            You've protected yourself tonight. Get some rest.
-          </Text>
+          <View style={styles.completedHeader}>
+            <Text style={styles.completedEmoji}>✨</Text>
+            <View style={styles.completedTextContainer}>
+              <Text style={styles.completedTitle}>Complete</Text>
+              <Text style={styles.completedSubtext}>Well done tonight</Text>
+            </View>
+          </View>
           <TouchableOpacity
             style={styles.resetButton}
             onPress={resetForNewDay}
           >
-            <Text style={styles.resetButtonText}>Reset for Testing</Text>
+            <Text style={styles.resetButtonText}>Reset</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -428,54 +486,49 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  completeButton: {
-    backgroundColor: '#3B82F6',
-    padding: 20,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  completeButtonDisabled: {
-    backgroundColor: '#1E293B',
-    opacity: 0.5,
-  },
-  completeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
   completedCard: {
-    backgroundColor: '#14532D',
-    borderWidth: 2,
-    borderColor: '#166534',
-    borderRadius: 16,
-    padding: 32,
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 20,
+  },
+  completedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   completedEmoji: {
-    fontSize: 64,
-    marginBottom: 16,
+    fontSize: 32,
+    marginRight: 12,
+  },
+  completedTextContainer: {
+    flex: 1,
   },
   completedTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#F1F5F9',
-    marginBottom: 8,
-  },
-  completedText: {
     fontSize: 16,
-    color: '#BBF7D0',
-    textAlign: 'center',
-    marginBottom: 16,
+    fontWeight: '600',
+    color: '#10B981',
+    marginBottom: 2,
+  },
+  completedSubtext: {
+    fontSize: 13,
+    color: '#64748B',
   },
   resetButton: {
-    marginTop: 12,
-    padding: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(100, 116, 139, 0.1)',
+    borderRadius: 6,
   },
   resetButtonText: {
     color: '#64748B',
-    fontSize: 14,
+    fontSize: 12,
+    fontWeight: '500',
   },
   infoBox: {
     backgroundColor: '#1E293B',
