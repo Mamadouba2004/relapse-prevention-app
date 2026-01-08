@@ -93,16 +93,7 @@ export default function ProgressScreen() {
 
   const loadInterventionBreakdown = async (db: SQLite.SQLiteDatabase) => {
     try {
-      const query = `
-        SELECT intervention_type, COUNT(*) as count, AVG(reduction) as avg_reduction 
-        FROM urge_sessions 
-        WHERE intervention_type IS NOT NULL 
-          AND intervention_type != 'unknown'
-          AND reduction IS NOT NULL 
-        GROUP BY intervention_type 
-        HAVING COUNT(*) >= 1
-        ORDER BY avg_reduction DESC
-      `;
+      const query = 'SELECT intervention_type, COUNT(*) as count, AVG(reduction) as avg_reduction FROM urge_sessions WHERE intervention_type IS NOT NULL AND reduction IS NOT NULL GROUP BY intervention_type ORDER BY avg_reduction DESC';
       const results = await db.getAllAsync<{
         intervention_type: string;
         count: number;
@@ -243,8 +234,6 @@ export default function ProgressScreen() {
         </View>
       )}
 
-      <Text style={styles.sectionHeader}>STATISTICS</Text>
-
       <View style={styles.statsGrid}>
         <View style={styles.statCard}>
           <Text style={styles.statNumber}>{stats.totalUrges}</Text>
@@ -261,7 +250,7 @@ export default function ProgressScreen() {
           <Text style={styles.statLabel}>Check-ins</Text>
         </View>
 
-        <View style={[styles.statCard, styles.successRateCard]}>
+        <View style={[styles.statCard, { backgroundColor: '#1E3A8A' }]}>
           <Text style={styles.statNumber}>{stats.successRate}%</Text>
           <Text style={styles.statLabel}>Success Rate</Text>
         </View>
@@ -269,7 +258,6 @@ export default function ProgressScreen() {
 
       {interventionStats.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>INSIGHTS</Text>
           <Text style={styles.sectionTitle}>🎯 What Works Best for You</Text>
           
           {interventionStats.map((intervention, index) => (
@@ -371,97 +359,69 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 15,
-    fontWeight: '400',
-    color: '#AEAEB2',
+    fontSize: 14,
+    color: '#64748B',
     marginBottom: 24,
   },
-  sectionHeader: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#8E8E93',
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-    marginTop: 24,
-    marginBottom: 12,
-    marginLeft: 16,
-  },
   heroCard: {
-    backgroundColor: '#1C1C1E',
-    borderWidth: 0,
-    borderRadius: 16,
+    backgroundColor: '#1E3A8A',
+    borderWidth: 2,
+    borderColor: '#3B82F6',
+    borderRadius: 20,
     padding: 32,
     alignItems: 'center',
-    marginBottom: 20,
-    marginHorizontal: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    marginBottom: 24,
   },
   heroNumber: {
-    fontSize: 72,
-    fontWeight: '700',
+    fontSize: 64,
+    fontWeight: 'bold',
     color: '#FFFFFF',
     marginBottom: 8,
   },
   heroLabel: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: '#E2E8F0',
     marginBottom: 8,
   },
   heroSubtext: {
-    fontSize: 15,
-    fontWeight: '400',
-    color: '#AEAEB2',
+    fontSize: 14,
+    color: '#93C5FD',
   },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
-    marginBottom: 20,
-    paddingHorizontal: 16,
+    marginBottom: 24,
   },
   statCard: {
-    backgroundColor: '#1C1C1E',
-    borderWidth: 0,
+    backgroundColor: '#1E293B',
+    borderWidth: 2,
+    borderColor: '#334155',
     borderRadius: 16,
     padding: 20,
     flex: 1,
     minWidth: '45%',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
   },
   statNumber: {
-    fontSize: 48,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#F1F5F9',
     marginBottom: 4,
   },
   statLabel: {
-    fontSize: 17,
-    fontWeight: '400',
-    color: '#AEAEB2',
+    fontSize: 14,
+    color: '#94A3B8',
     textAlign: 'center',
   },
-  successRateCard: {
-    backgroundColor: '#1E3A8A',
-  },
   section: {
-    backgroundColor: '#1C1C1E',
+    backgroundColor: '#1E293B',
     borderRadius: 16,
     padding: 20,
-    marginBottom: 20,
-    marginHorizontal: 16,
-    borderWidth: 0,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
   },
   sectionTitle: {
     fontSize: 18,
@@ -474,7 +434,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#2C2C2E',
+    borderBottomColor: '#334155',
   },
   interventionEmoji: {
     fontSize: 32,
@@ -486,16 +446,15 @@ const styles = StyleSheet.create({
   interventionName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: '#F1F5F9',
     marginBottom: 4,
   },
   interventionStats: {
     fontSize: 14,
-    fontWeight: '400',
-    color: '#AEAEB2',
+    color: '#94A3B8',
   },
   bestBadge: {
-    backgroundColor: '#34C759',
+    backgroundColor: '#10B981',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
@@ -510,12 +469,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#2C2C2E',
+    borderBottomColor: '#334155',
   },
   factorRank: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#8E8E93',
+    color: '#64748B',
     width: 32,
   },
   factorEmoji: {
@@ -525,12 +484,11 @@ const styles = StyleSheet.create({
   factorLabel: {
     flex: 1,
     fontSize: 15,
-    fontWeight: '400',
-    color: '#FFFFFF',
+    color: '#E2E8F0',
   },
   factorCount: {
     fontSize: 14,
-    color: '#8E8E93',
+    color: '#64748B',
     fontWeight: '600',
   },
   weekRow: {
@@ -540,14 +498,13 @@ const styles = StyleSheet.create({
   },
   weekLabel: {
     fontSize: 14,
-    fontWeight: '400',
-    color: '#AEAEB2',
+    color: '#94A3B8',
     width: 70,
   },
   weekBar: {
     flex: 1,
     height: 24,
-    backgroundColor: '#2C2C2E',
+    backgroundColor: '#0F172A',
     borderRadius: 12,
     overflow: 'hidden',
     marginHorizontal: 12,
@@ -560,12 +517,12 @@ const styles = StyleSheet.create({
   weekValue: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#F1F5F9',
     width: 50,
   },
   weekTrend: {
     fontSize: 14,
-    color: '#34C759',
+    color: '#10B981',
     fontWeight: '600',
     width: 50,
     textAlign: 'right',
@@ -581,40 +538,34 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#F1F5F9',
     marginBottom: 12,
   },
   emptyText: {
     fontSize: 16,
-    fontWeight: '400',
-    color: '#AEAEB2',
+    color: '#94A3B8',
     textAlign: 'center',
     lineHeight: 24,
     paddingHorizontal: 40,
   },
   infoBox: {
-    backgroundColor: '#1C1C1E',
+    backgroundColor: '#1E293B',
     padding: 20,
-    borderRadius: 16,
+    borderRadius: 12,
     marginTop: 8,
     marginBottom: 40,
-    marginHorizontal: 16,
-    borderWidth: 0,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
   },
   infoTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#F1F5F9',
     marginBottom: 10,
   },
   infoText: {
     fontSize: 14,
-    fontWeight: '400',
-    color: '#AEAEB2',
+    color: '#94A3B8',
     lineHeight: 22,
   },
 });
