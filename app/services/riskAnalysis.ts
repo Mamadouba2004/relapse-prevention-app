@@ -194,7 +194,7 @@ export const getSafeHarborTime = async (): Promise<{
       }
 
       return {
-        timeRemaining: `${hoursUntil}h ${minutesUntil}m`,
+        timeRemaining: `${hoursUntil}h${minutesUntil}m`,
         safeHour: checkHour,
         safeHourLabel,
       };
