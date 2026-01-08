@@ -12,6 +12,11 @@ import {
   getRiskForCurrentHour as getProfileRisk,
   initRiskProfile
 } from '@/app/services/riskProfile';
+import { ActionButton } from '@/components/ui/action-button';
+import { GradientButton } from '@/components/ui/gradient-button';
+import { RiskGauge } from '@/components/ui/risk-gauge';
+import { StatCard } from '@/components/ui/stat-card';
+import { theme } from '@/constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
@@ -414,17 +419,14 @@ export default function HomeScreen() {
         >
           <Text style={styles.riskWeatherLabel}>RISK WEATHER</Text>
           
-          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-            <MaterialCommunityIcons 
-              name={getWeatherIcon()} 
-              size={80} 
-              color="rgba(255,255,255,0.9)" 
-              style={styles.weatherIcon}
-            />
-          </Animated.View>
+          {/* RiskGauge replaces old weather icon + percentage */}
+          <RiskGauge 
+            riskPercent={liveRiskScore} 
+            size={180}
+            strokeWidth={14}
+            showLabel={false}
+          />
           
-          {/* Now using live database risk score! */}
-          <Text style={styles.riskScore}>{liveRiskScore}%</Text>
           <Text style={[
             styles.riskStatus,
             isHighRisk && styles.riskStatusHighlight
@@ -453,23 +455,63 @@ export default function HomeScreen() {
         </LinearGradient>
       </TouchableOpacity>
 
+      {/* Stats Row - Key metrics at a glance */}
+      <View style={styles.statsRow}>
+        <StatCard 
+          value={mlPrediction?.probability ? `${Math.round(mlPrediction.probability * 100)}%` : '--'} 
+          label="ML Prediction"
+          color={mlPrediction?.riskLevel === 'HIGH' ? theme.colors.risk.high : theme.colors.accent.success}
+        />
+        <StatCard 
+          value={safeHarbor?.hoursUntil ?? '--'} 
+          label="Hours to Safe"
+          color={theme.colors.accent.teal}
+        />
+        <StatCard 
+          value={mlPrediction?.confidence ?? '--'} 
+          label="Confidence"
+          color={theme.colors.text.secondary}
+        />
+      </View>
+
+      {/* Quick Actions Row */}
+      <View style={styles.quickActionsRow}>
+        <ActionButton 
+          icon="🧘" 
+          label="Breathe" 
+          onPress={() => setShowIntervention(true)} 
+        />
+        <ActionButton 
+          icon="📊" 
+          label="Stats" 
+          onPress={() => router.push('/(tabs)/analytics')} 
+        />
+        <ActionButton 
+          icon="🌊" 
+          label="Pattern" 
+          onPress={() => router.push('/(tabs)/profile')} 
+        />
+        <ActionButton 
+          icon="🌙" 
+          label="Routine" 
+          onPress={() => router.push('/(tabs)/routine')} 
+        />
+      </View>
+
       {/* Dynamic Intervention Card - Coach-style copy */}
       {isHighRisk && (
         <View style={styles.interventionCard}>
-          <Text style={styles.interventionCardTitle}>Intervention Card</Text>
+          <Text style={styles.interventionCardTitle}>🔔 Intervention</Text>
           <Text style={styles.interventionText}>
             Hey, I notice you're in a high-risk window. Want a 2-minute reset?
           </Text>
-          <TouchableOpacity 
-            style={styles.breathingButton}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              setShowIntervention(true);
-            }}
+          <GradientButton 
+            variant="success"
+            onPress={() => setShowIntervention(true)}
+            fullWidth
           >
-            <Text style={styles.breathingButtonText}>Start 2-Min Breathing</Text>
-            <MaterialCommunityIcons name="meditation" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
+            Start 2-Min Breathing 🧘
+          </GradientButton>
         </View>
       )}
 
@@ -1065,10 +1107,10 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: theme.colors.background.primary,
   },
   contentContainer: {
-    padding: 20,
+    padding: theme.spacing.sm,
     paddingTop: 60,
     paddingBottom: 40,
   },
@@ -1113,6 +1155,24 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
   },
+
+  // Stats Row
+  statsRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+  },
+
+  // Quick Actions Row
+  quickActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    backgroundColor: theme.colors.background.card,
+    borderRadius: theme.borderRadius.lg,
+    paddingVertical: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+    ...theme.shadows.md,
+  },
   riskPeakTimer: {
     fontSize: 13,
     color: 'rgba(255,255,255,0.7)',
@@ -1140,21 +1200,24 @@ const styles = StyleSheet.create({
 
   // Intervention Card
   interventionCard: {
-    backgroundColor: '#2A1A2A',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
+    backgroundColor: theme.colors.background.card,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.components.card.padding,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.risk.high,
+    ...theme.shadows.md,
   },
   interventionCardTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.6)',
-    marginBottom: 8,
+    fontSize: theme.typography.fontSize.body,
+    fontWeight: theme.typography.fontWeight.semibold,
+    color: theme.colors.text.secondary,
+    marginBottom: theme.spacing.xxs,
   },
   interventionText: {
-    fontSize: 16,
-    color: '#FFFFFF',
-    marginBottom: 16,
+    fontSize: theme.typography.fontSize.bodyLarge,
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.sm,
     lineHeight: 22,
   },
   breathingButton: {
@@ -1176,23 +1239,24 @@ const styles = StyleSheet.create({
   // Hero Buttons
   heroButtonRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24,
+    gap: theme.spacing.xs,
+    marginBottom: theme.spacing.md,
   },
   heroButton: {
     flex: 1,
-    borderRadius: 20,
+    borderRadius: theme.borderRadius.xl,
     paddingVertical: 28,
-    paddingHorizontal: 16,
+    paddingHorizontal: theme.spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 140,
+    ...theme.shadows.lg,
   },
   urgeHeroButton: {
-    backgroundColor: '#FF6B35',
+    backgroundColor: theme.colors.risk.high, // #FF6B6B
   },
   safeHeroButton: {
-    backgroundColor: '#4AA0A0',
+    backgroundColor: theme.colors.accent.success, // #4ECDC4
   },
   heroButtonTitle: {
     fontSize: 18,
