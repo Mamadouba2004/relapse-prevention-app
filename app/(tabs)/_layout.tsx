@@ -19,37 +19,37 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Now',
+          title: 'Home',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
         }}
       />
       <Tabs.Screen
-  name="profile"
-  options={{
-    title: 'Pattern',
-    tabBarIcon: ({ color, focused }) => (
-      <IconSymbol name={focused ? 'person.fill' : 'person'} color={color} size={28} />
-    ),
-  }}
-/>
-      <Tabs.Screen
-        name="routine"
+        name="profile"
         options={{
-          title: 'Routine',
+          title: 'Risk',
           tabBarIcon: ({ color, focused }) => (
-            <IconSymbol name={focused ? 'moon.stars.fill' : 'moon.stars'} color={color} size={28} />
+            <IconSymbol name={focused ? 'chart.bar.fill' : 'chart.bar'} color={color} size={28} />
           ),
         }}
       />
       <Tabs.Screen
-    name="analytics"
-    options={{
-      title: 'Progress',
-      tabBarIcon: ({ color }) => (
-        <IconSymbol size={28} name="chart.bar.fill" color={color} />
-      ),
-    }}
-  />
+        name="routine"
+        options={{
+          title: 'Learn',
+          tabBarIcon: ({ color, focused }) => (
+            <IconSymbol name={focused ? 'book.fill' : 'book'} color={color} size={28} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="analytics"
+        options={{
+          title: 'Privacy',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="lock.fill" color={color} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="settings"
         options={{
