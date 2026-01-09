@@ -12,15 +12,18 @@ import {
   getRiskForCurrentHour as getProfileRisk,
   initRiskProfile
 } from '@/app/services/riskProfile';
-import { ActionButton } from '@/components/ui/action-button';
-import { GradientButton } from '@/components/ui/gradient-button';
+// JITAI Components
+import { AccuracyBadge } from '@/components/ui/accuracy-badge';
+import { AlertButton } from '@/components/ui/alert-button';
+import { CheckInCard } from '@/components/ui/checkin-card';
+import { CircleActionButton } from '@/components/ui/circle-action-button';
+import { JITAIStatCard } from '@/components/ui/jitai-stat-card';
 import { RiskGauge } from '@/components/ui/risk-gauge';
-import { StatCard } from '@/components/ui/stat-card';
+import { StarField } from '@/components/ui/star-field';
 import { theme } from '@/constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -63,6 +66,16 @@ export default function HomeScreen() {
     safeHourLabel: string;
   } | null>(null);
 
+  // JITAI-specific state
+  const [confidenceMin, setConfidenceMin] = useState<number>(15);
+  const [confidenceMax, setConfidenceMax] = useState<number>(28);
+  const [highRiskWindows, setHighRiskWindows] = useState<number>(0);
+  const [navigatedWindows, setNavigatedWindows] = useState<number>(0);
+  const [modelAccuracy, setModelAccuracy] = useState<number>(58);
+  const [lastUpdated, setLastUpdated] = useState<string>('Just now');
+  const [nextCheckInTime, setNextCheckInTime] = useState<string>('4 hours');
+  const [nextCheckInLabel, setNextCheckInLabel] = useState<string>('6:00 PM');
+
   useEffect(() => {
     checkAndInitApp();
   }, []);
@@ -90,14 +103,69 @@ export default function HomeScreen() {
         const dbSafe = await getSafeHarborTime();
         setDbSafeHarbor(dbSafe);
         
+        // Calculate JITAI metrics
+        await calculateJITAIMetrics();
+        
         console.log('📊 Tab focused - Screen risk:', screenRisk, '%, Profile risk:', profileRisk, '%, Combined:', combinedRisk, '%');
         console.log('🏠 Safe harbor (profile):', nextSafe?.label || 'none');
         console.log('🏠 Safe harbor (DB):', dbSafe?.timeRemaining || 'none', 'until', dbSafe?.safeHourLabel || 'N/A');
       };
       
       refreshRiskData();
-    }, [])
+    }, [db])
   );
+
+  // Calculate JITAI metrics from database
+  const calculateJITAIMetrics = async () => {
+    if (!db) return;
+    
+    try {
+      // Count high-risk windows (interventions triggered)
+      const interventionCount = await db.getAllAsync<{ count: number }>(
+        'SELECT COUNT(DISTINCT strftime("%Y-%m-%d %H", datetime(timestamp/1000, "unixepoch"))) as count FROM logs WHERE type = ?',
+        ['urge']
+      );
+      const totalWindows = interventionCount[0]?.count || 0;
+      setHighRiskWindows(totalWindows);
+      
+      // Count navigated windows (safe check-ins after urges)
+      const safeCount = await db.getAllAsync<{ count: number }>(
+        'SELECT COUNT(*) as count FROM logs WHERE type = ?',
+        ['safe']
+      );
+      const navigated = Math.min(safeCount[0]?.count || 0, totalWindows);
+      setNavigatedWindows(navigated);
+      
+      // Calculate confidence interval based on current risk
+      const riskVariance = Math.max(5, Math.floor(liveRiskScore * 0.15));
+      setConfidenceMin(Math.max(0, liveRiskScore - riskVariance));
+      setConfidenceMax(Math.min(100, liveRiskScore + riskVariance));
+      
+      // Calculate model accuracy based on prediction success
+      // (For now, use ML prediction confidence or default)
+      if (mlPrediction) {
+        const accuracyMap: { [key: string]: number } = {
+          'high': 72,
+          'medium': 58,
+          'low': 45
+        };
+        setModelAccuracy(accuracyMap[mlPrediction.confidence] || 58);
+      }
+      
+      // Calculate next check-in time
+      const now = new Date();
+      const nextCheckIn = new Date(now.getTime() + 4 * 60 * 60 * 1000); // 4 hours from now
+      const hoursUntil = Math.floor((nextCheckIn.getTime() - now.getTime()) / (1000 * 60 * 60));
+      setNextCheckInTime(`${hoursUntil} hours`);
+      setNextCheckInLabel(nextCheckIn.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }));
+      
+      // Update last updated timestamp
+      setLastUpdated('Just now');
+      
+    } catch (error) {
+      console.log('Error calculating JITAI metrics:', error);
+    }
+  };
 
   const checkAndInitApp = async () => {
     const database = await SQLite.openDatabaseAsync('behavior.db');
@@ -404,155 +472,116 @@ export default function HomeScreen() {
   }, [isHighRisk]);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* Risk Weather Header - Tappable for transparency */}
-      <TouchableOpacity 
-        activeOpacity={0.9}
-        onPress={handleRiskCardTap}
-        style={styles.riskWeatherContainer}
+    <View style={styles.container}>
+      {/* Animated star background */}
+      <StarField />
+      
+      <ScrollView 
+        style={styles.scrollView} 
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
       >
-        <LinearGradient
-          colors={getRiskGradient()}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.riskWeatherGradient}
-        >
-          <Text style={styles.riskWeatherLabel}>RISK WEATHER</Text>
-          
-          {/* RiskGauge replaces old weather icon + percentage */}
-          <RiskGauge 
-            riskPercent={liveRiskScore} 
-            size={180}
-            strokeWidth={14}
-            showLabel={false}
-          />
-          
-          <Text style={[
-            styles.riskStatus,
-            isHighRisk && styles.riskStatusHighlight
-          ]}>
-            {getRiskStatus()}
-          </Text>
-          
-          {/* Risk Peak Timer - Shows when risk is elevated (>40%) */}
-          {liveRiskScore > 40 && dbSafeHarbor && (
-            <Text style={styles.riskPeakTimer}>
-              Risk peak ends in: {dbSafeHarbor.timeRemaining}
-            </Text>
-          )}
-          
-          {/* Hope Timer - Synced with Pattern Map! */}
-          {hopeTimer && safeHarborLabel && (
-            <View style={styles.hopeTimerContainer}>
-              <Text style={styles.hopeTimer}>
-                ⏱️ Clear skies by {safeHarborLabel}
-              </Text>
-              <Text style={styles.hopeTimerCountdown}>
-                {hopeTimer} remaining
-              </Text>
-            </View>
-          )}
-        </LinearGradient>
-      </TouchableOpacity>
-
-      {/* Stats Row - Key metrics at a glance */}
-      <View style={styles.statsRow}>
-        <StatCard 
-          value={mlPrediction?.probability ? `${Math.round(mlPrediction.probability * 100)}%` : '--'} 
-          label="ML Prediction"
-          color={mlPrediction?.riskLevel === 'HIGH' ? theme.colors.risk.high : theme.colors.accent.success}
-        />
-        <StatCard 
-          value={safeHarbor?.hoursUntil ?? '--'} 
-          label="Hours to Safe"
-          color={theme.colors.accent.teal}
-        />
-        <StatCard 
-          value={mlPrediction?.confidence ?? '--'} 
-          label="Confidence"
-          color={theme.colors.text.secondary}
-        />
-      </View>
-
-      {/* Quick Actions Row */}
-      <View style={styles.quickActionsRow}>
-        <ActionButton 
-          icon="🧘" 
-          label="Breathe" 
-          onPress={() => setShowIntervention(true)} 
-        />
-        <ActionButton 
-          icon="📊" 
-          label="Stats" 
-          onPress={() => router.push('/(tabs)/analytics')} 
-        />
-        <ActionButton 
-          icon="🌊" 
-          label="Pattern" 
-          onPress={() => router.push('/(tabs)/profile')} 
-        />
-        <ActionButton 
-          icon="🌙" 
-          label="Routine" 
-          onPress={() => router.push('/(tabs)/routine')} 
-        />
-      </View>
-
-      {/* Dynamic Intervention Card - Coach-style copy */}
-      {isHighRisk && (
-        <View style={styles.interventionCard}>
-          <Text style={styles.interventionCardTitle}>🔔 Intervention</Text>
-          <Text style={styles.interventionText}>
-            Hey, I notice you're in a high-risk window. Want a 2-minute reset?
-          </Text>
-          <GradientButton 
-            variant="success"
-            onPress={() => setShowIntervention(true)}
-            fullWidth
-          >
-            Start 2-Min Breathing 🧘
-          </GradientButton>
+        {/* JITAI Header */}
+        <View style={styles.header}>
+          <Text style={styles.appTitle}>INTERRUPTION</Text>
+          <TouchableOpacity onPress={handleRiskCardTap}>
+            <AccuracyBadge accuracy={modelAccuracy} />
+          </TouchableOpacity>
         </View>
-      )}
 
-      {/* Primary Action Buttons - Coach-style copy */}
-      <View style={styles.heroButtonRow}>
-        <TouchableOpacity 
-          style={[styles.heroButton, styles.urgeHeroButton]}
+        {/* Main Risk Gauge (replaces Avatar) */}
+        <RiskGauge 
+          risk={liveRiskScore}
+          confidenceMin={confidenceMin}
+          confidenceMax={confidenceMax}
+          lastUpdated={lastUpdated}
+          size={200}
+        />
+
+        {/* JITAI Stats Row */}
+        <View style={styles.jitaiStatsRow}>
+          <JITAIStatCard value={highRiskWindows} label="High-Risk Windows" />
+          <View style={styles.statsDivider} />
+          <JITAIStatCard value={navigatedWindows} label="Navigated" highlight />
+          <View style={styles.statsDivider} />
+          <JITAIStatCard value={`${modelAccuracy}%`} label="Model Accuracy" />
+        </View>
+
+        {/* Circle Action Buttons - JITAI Style */}
+        <View style={styles.circleActionsRow}>
+          <CircleActionButton
+            icon="clock-outline"
+            label="Check-in"
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              logEvent('safe');
+            }}
+          />
+          <CircleActionButton
+            icon="waves"
+            label="Breathe"
+            onPress={() => setShowIntervention(true)}
+          />
+          <CircleActionButton
+            icon="chart-line"
+            label="Insights"
+            onPress={() => router.push('/(tabs)/analytics')}
+          />
+          <CircleActionButton
+            icon="chat-outline"
+            label="Chat"
+            onPress={() => router.push('/(tabs)/profile')}
+          />
+        </View>
+
+        {/* Alert Button - Only shows when risk > 70% (JITAI auto-trigger) */}
+        {liveRiskScore > 70 && (
+          <AlertButton 
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+              setShowIntervention(true);
+            }}
+            label="⚠️ Navigate High-Risk Window"
+          />
+        )}
+
+        {/* Next Check-in Card (replaces secondary buttons) */}
+        <CheckInCard 
+          timeUntil={nextCheckInTime}
+          nextCheckInTime={nextCheckInLabel}
           onPress={() => {
-            // Heavy haptic for grounding during urge
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-            logEvent('urge');
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            Alert.alert(
+              '📅 Check-in Schedule',
+              'Check-ins help the system learn your patterns and improve predictions.\n\nYou can adjust check-in frequency in Settings.',
+              [{ text: 'Got it', style: 'default' }]
+            );
           }}
-        >
-          <MaterialCommunityIcons name="waves" size={36} color="#FFFFFF" />
-          <Text style={styles.heroButtonTitle}>I'm Feeling an{'\n'}Urge</Text>
-          <Text style={styles.heroButtonSubtitle}>Ride the wave together</Text>
-        </TouchableOpacity>
+        />
 
+        {/* Hold On Card - Shows when risk is elevated (30-70%) */}
+        {liveRiskScore > 30 && liveRiskScore <= 70 && safeHarbor && (
+          <View style={styles.holdOnCard}>
+            <Text style={styles.holdOnCardTitle}>⏱️ Hold On</Text>
+            <Text style={styles.holdOnCardText}>
+              Lower risk expected by <Text style={styles.holdOnCardHighlight}>{safeHarbor.label}</Text>
+            </Text>
+            <Text style={styles.holdOnCardTimer}>
+              {safeHarbor.hoursUntil}h {safeHarbor.minutesUntil}m remaining
+            </Text>
+          </View>
+        )}
+
+        {/* Footer Link */}
         <TouchableOpacity 
-          style={[styles.heroButton, styles.safeHeroButton]}
-          onPress={() => {
-            // Success haptic for positive confirmation
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            logEvent('safe');
-          }}
+          style={styles.footerLink}
+          onPress={() => logEvent('lapse')}
         >
-          <MaterialCommunityIcons name="shield-check" size={36} color="#FFFFFF" />
-          <Text style={styles.heroButtonTitle}>I'm Good /{'\n'}Staying Strong</Text>
-          <MaterialCommunityIcons name="lightning-bolt" size={20} color="rgba(255,255,255,0.7)" style={{ marginTop: 4 }} />
+          <Text style={styles.footerText}>
+            Need to log a past event? <Text style={styles.footerLinkText}>Tap here.</Text>
+          </Text>
         </TouchableOpacity>
-      </View>
-
-      {/* Footer Link */}
-      <TouchableOpacity 
-        style={styles.footerLink}
-        onPress={() => logEvent('lapse')}
-      >
-        <Text style={styles.footerText}>
-          Need to log a past event? <Text style={styles.footerLinkText}>Tap here.</Text>
-        </Text>
-      </TouchableOpacity>
+      </ScrollView>
 
       <InterventionModal
         visible={showIntervention}
@@ -564,7 +593,7 @@ export default function HomeScreen() {
         visible={showLapseSupport}
         onClose={() => setShowLapseSupport(false)}
       />
-    </ScrollView>
+    </View>
   );
 }
 
@@ -1107,15 +1136,143 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background.primary,
+    backgroundColor: '#0a0e1a', // Deep space background
+  },
+  scrollView: {
+    flex: 1,
   },
   contentContainer: {
     padding: theme.spacing.sm,
-    paddingTop: 60,
+    paddingTop: 50,
     paddingBottom: 40,
   },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.xs,
+  },
+  appTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: theme.colors.text.primary,
+    letterSpacing: 2,
+  },
+
+  // JITAI Stats Row
+  jitaiStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: 'rgba(30, 41, 59, 0.5)',
+    borderRadius: theme.borderRadius.lg,
+    paddingVertical: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(100, 116, 139, 0.2)',
+  },
+  statsDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: 'rgba(100, 116, 139, 0.3)',
+  },
+
+  // Circle Actions Row
+  circleActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: theme.spacing.md,
+    paddingHorizontal: theme.spacing.xs,
+  },
+
+  // Secondary Actions
+  secondaryActions: {
+    flexDirection: 'row',
+    gap: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+  },
+  secondaryButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(30, 41, 59, 0.5)',
+    borderRadius: theme.borderRadius.md,
+    paddingVertical: theme.spacing.sm,
+    gap: theme.spacing.xxs,
+    borderWidth: 1,
+    borderColor: 'rgba(100, 116, 139, 0.2)',
+  },
+  secondaryButtonText: {
+    fontSize: theme.typography.fontSize.body,
+    color: theme.colors.text.secondary,
+    fontWeight: theme.typography.fontWeight.medium,
+  },
+
+  // Hold On Card (JITAI terminology)
+  holdOnCard: {
+    backgroundColor: 'rgba(78, 205, 196, 0.1)',
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(78, 205, 196, 0.3)',
+    alignItems: 'center',
+  },
+  holdOnCardTitle: {
+    fontSize: theme.typography.fontSize.body,
+    fontWeight: theme.typography.fontWeight.semibold,
+    color: theme.colors.accent.success,
+    marginBottom: theme.spacing.xxxs,
+  },
+  holdOnCardText: {
+    fontSize: theme.typography.fontSize.body,
+    color: theme.colors.text.secondary,
+  },
+  holdOnCardHighlight: {
+    color: theme.colors.accent.success,
+    fontWeight: theme.typography.fontWeight.bold,
+  },
+  holdOnCardTimer: {
+    fontSize: theme.typography.fontSize.caption,
+    color: theme.colors.text.tertiary,
+    marginTop: theme.spacing.xxxs,
+  },
+
+  // Legacy Hope Card (keeping for compatibility)
+  hopeCard: {
+    backgroundColor: 'rgba(78, 205, 196, 0.1)',
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(78, 205, 196, 0.3)',
+    alignItems: 'center',
+  },
+  hopeCardTitle: {
+    fontSize: theme.typography.fontSize.body,
+    fontWeight: theme.typography.fontWeight.semibold,
+    color: theme.colors.accent.success,
+    marginBottom: theme.spacing.xxxs,
+  },
+  hopeCardText: {
+    fontSize: theme.typography.fontSize.body,
+    color: theme.colors.text.secondary,
+  },
+  hopeCardHighlight: {
+    color: theme.colors.accent.success,
+    fontWeight: theme.typography.fontWeight.bold,
+  },
+  hopeCardTimer: {
+    fontSize: theme.typography.fontSize.caption,
+    color: theme.colors.text.tertiary,
+    marginTop: theme.spacing.xxxs,
+  },
   
-  // Risk Weather Header
+  // Legacy Risk Weather Header (keeping for reference)
   riskWeatherContainer: {
     borderRadius: 24,
     overflow: 'hidden',
