@@ -15,15 +15,14 @@ import {
 // JITAI Components
 import { AccuracyBadge } from '@/components/ui/accuracy-badge';
 import { AlertButton } from '@/components/ui/alert-button';
-import { CheckInCard } from '@/components/ui/checkin-card';
 import { CircleActionButton } from '@/components/ui/circle-action-button';
-import { JITAIStatCard } from '@/components/ui/jitai-stat-card';
 import { RiskGauge } from '@/components/ui/risk-gauge';
 import { StarField } from '@/components/ui/star-field';
 import { theme } from '@/constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -51,7 +50,7 @@ export default function HomeScreen() {
   } | null>(null);
   
   // Live risk score from database (updated on tab focus)
-  const [liveRiskScore, setLiveRiskScore] = useState<number>(20);
+  const [liveRiskScore, setLiveRiskScore] = useState<number>(47); // Default to JITAI placeholder
   const [safeHarbor, setSafeHarbor] = useState<{
     safeHour: number;
     hoursUntil: number;
@@ -67,11 +66,11 @@ export default function HomeScreen() {
   } | null>(null);
 
   // JITAI-specific state
-  const [confidenceMin, setConfidenceMin] = useState<number>(15);
-  const [confidenceMax, setConfidenceMax] = useState<number>(28);
-  const [highRiskWindows, setHighRiskWindows] = useState<number>(0);
-  const [navigatedWindows, setNavigatedWindows] = useState<number>(0);
-  const [modelAccuracy, setModelAccuracy] = useState<number>(58);
+  const [confidenceMin, setConfidenceMin] = useState<number>(38); // Default to JITAI placeholder
+  const [confidenceMax, setConfidenceMax] = useState<number>(54); // Default to JITAI placeholder
+  const [highRiskWindows, setHighRiskWindows] = useState<number>(12); // Default to JITAI placeholder
+  const [navigatedWindows, setNavigatedWindows] = useState<number>(9); // Default to JITAI placeholder
+  const [modelAccuracy, setModelAccuracy] = useState<number>(58); // Default to JITAI placeholder
   const [lastUpdated, setLastUpdated] = useState<string>('Just now');
   const [nextCheckInTime, setNextCheckInTime] = useState<string>('4 hours');
   const [nextCheckInLabel, setNextCheckInLabel] = useState<string>('6:00 PM');
@@ -316,8 +315,8 @@ export default function HomeScreen() {
       } else {
         // SAFE CHECK-IN = POSITIVE!
         // Don't reload risk (it would go up from activity)
-        // Just show encouragement
-        alert('Strong move checking in! Building awareness is half the battle. ✨');
+        // No alert here - handled in UI
+        console.log('Safe check-in logged');
       }
       
     } catch (error) {
@@ -490,22 +489,61 @@ export default function HomeScreen() {
         </View>
 
         {/* Main Risk Gauge (replaces Avatar) */}
-        <RiskGauge 
-          risk={liveRiskScore}
-          confidenceMin={confidenceMin}
-          confidenceMax={confidenceMax}
-          lastUpdated={lastUpdated}
-          size={200}
-        />
-
-        {/* JITAI Stats Row */}
-        <View style={styles.jitaiStatsRow}>
-          <JITAIStatCard value={highRiskWindows} label="High-Risk Windows" />
-          <View style={styles.statsDivider} />
-          <JITAIStatCard value={navigatedWindows} label="Navigated" highlight />
-          <View style={styles.statsDivider} />
-          <JITAIStatCard value={`${modelAccuracy}%`} label="Model Accuracy" />
+        <View style={{ alignItems: 'center' }}>
+          <RiskGauge 
+            risk={liveRiskScore}
+            confidenceMin={confidenceMin}
+            confidenceMax={confidenceMax}
+            lastUpdated={lastUpdated}
+            size={200}
+          />
+          {/* Trend Indicator */}
+          <Text style={{ 
+            color: '#4ECDC4', 
+            fontSize: 14, 
+            marginTop: -10, 
+            marginBottom: 20,
+            fontWeight: '600'
+          }}>
+            ↗️ +3% (1h ago)
+          </Text>
         </View>
+
+        {/* JITAI Intervention Card - Conditional */}
+        {true /* logic placeholder: risk >= 60 && !recentCheckIn */ && (
+           <View style={{
+             backgroundColor: '#1a1f2e',
+             borderRadius: 16,
+             padding: 20,
+             marginVertical: 10,
+             borderLeftWidth: 4,
+             borderLeftColor: '#9D8CFF',
+             shadowColor: '#000',
+             shadowOffset: { width: 0, height: 4 },
+             shadowOpacity: 0.2,
+             shadowRadius: 8,
+           }}>
+             <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 8, lineHeight: 24 }}>
+               Hey, I notice you're in a high-risk window. Want a 2-minute reset?
+             </Text>
+             <TouchableOpacity
+               onPress={() => setShowIntervention(true)}
+               style={{
+                 flexDirection: 'row',
+                 alignItems: 'center',
+                 justifyContent: 'center',
+                 backgroundColor: '#5B7CFF',
+                 paddingVertical: 12,
+                 paddingHorizontal: 20,
+                 borderRadius: 12,
+                 marginTop: 12
+               }}
+             >
+               <MaterialCommunityIcons name="meditation" size={20} color="#FFF" style={{ marginRight: 8 }} />
+               <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Start 2-Min Breathing</Text>
+             </TouchableOpacity>
+           </View>
+        )}
 
         {/* Circle Action Buttons - JITAI Style */}
         <View style={styles.circleActionsRow}>
@@ -515,22 +553,38 @@ export default function HomeScreen() {
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               logEvent('safe');
+              
+              // Smart "I'm Good" Integration
+              Alert.alert(
+                "Check-in Complete",
+                "How are you feeling right now?",
+                [
+                  { 
+                    text: "😰 Struggling", 
+                    style: 'destructive', 
+                    onPress: () => {
+                      console.log('Struggling');
+                      setShowIntervention(true);
+                    }
+                  },
+                  { 
+                    text: "✅ I'm Good", 
+                    style: 'default', 
+                    onPress: () => console.log('Good') 
+                  }
+                ]
+              );
             }}
-          />
-          <CircleActionButton
-            icon="waves"
-            label="Breathe"
-            onPress={() => setShowIntervention(true)}
           />
           <CircleActionButton
             icon="chart-line"
             label="Insights"
-            onPress={() => router.push('/(tabs)/analytics')}
+            onPress={() => router.push('/(tabs)/profile')}
           />
           <CircleActionButton
-            icon="chat-outline"
-            label="Chat"
-            onPress={() => router.push('/(tabs)/profile')}
+            icon="school-outline"
+            label="Learn"
+            onPress={() => router.push('/(tabs)/learn')}
           />
         </View>
 
@@ -544,44 +598,31 @@ export default function HomeScreen() {
             label="⚠️ Navigate High-Risk Window"
           />
         )}
-
-        {/* Next Check-in Card (replaces secondary buttons) */}
-        <CheckInCard 
-          timeUntil={nextCheckInTime}
-          nextCheckInTime={nextCheckInLabel}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            Alert.alert(
-              '📅 Check-in Schedule',
-              'Check-ins help the system learn your patterns and improve predictions.\n\nYou can adjust check-in frequency in Settings.',
-              [{ text: 'Got it', style: 'default' }]
-            );
-          }}
-        />
-
-        {/* Hold On Card - Shows when risk is elevated (30-70%) */}
-        {liveRiskScore > 30 && liveRiskScore <= 70 && safeHarbor && (
-          <View style={styles.holdOnCard}>
-            <Text style={styles.holdOnCardTitle}>⏱️ Hold On</Text>
-            <Text style={styles.holdOnCardText}>
-              Lower risk expected by <Text style={styles.holdOnCardHighlight}>{safeHarbor.label}</Text>
-            </Text>
-            <Text style={styles.holdOnCardTimer}>
-              {safeHarbor.hoursUntil}h {safeHarbor.minutesUntil}m remaining
-            </Text>
-          </View>
-        )}
-
-        {/* Footer Link */}
-        <TouchableOpacity 
-          style={styles.footerLink}
-          onPress={() => logEvent('lapse')}
-        >
-          <Text style={styles.footerText}>
-            Need to log a past event? <Text style={styles.footerLinkText}>Tap here.</Text>
-          </Text>
-        </TouchableOpacity>
       </ScrollView>
+
+      {/* Manual Panic Button - Sticky Bottom */}
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+          setShowIntervention(true);
+        }}
+        style={styles.panicButtonWrapper}
+      >
+        <LinearGradient
+          colors={['#FF6B35', '#F7931E']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.panicButtonGradient}
+        >
+          <MaterialCommunityIcons name="waves" size={24} color="#FFFFFF" />
+          <View style={styles.panicButtonTextContainer}>
+            <Text style={styles.panicButtonTitle}>I'm Feeling an Urge</Text>
+            <Text style={styles.panicButtonSubtitle}>Ride the wave together</Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={24} color="rgba(255,255,255,0.6)" />
+        </LinearGradient>
+      </TouchableOpacity>
 
       <InterventionModal
         visible={showIntervention}
@@ -1131,6 +1172,7 @@ const onboardingStyles = StyleSheet.create({
   },
 });
 
+// Panic Button
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
@@ -1589,5 +1631,44 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     marginBottom: 6,
     lineHeight: 20,
+  },
+
+  // Panic Button
+  panicButtonWrapper: {
+    marginVertical: theme.spacing.md,
+    alignSelf: 'center',
+    width: '90%', // Match the nav bar width visual alignment
+    marginBottom: 100, // Make room for floating bottom nav
+    shadowColor: '#F7931E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  panicButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 32, // Fully rounded pill
+    height: 64, // Taller button for easier tapping
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  panicButtonTextContainer: {
+    flex: 1,
+    marginLeft: 16,
+    justifyContent: 'center',
+  },
+  panicButtonTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  panicButtonSubtitle: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 13,
+    fontStyle: 'italic',
   },
 });

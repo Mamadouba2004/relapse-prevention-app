@@ -61,8 +61,8 @@ export const theme = {
   colors: {
     // Background hierarchy
     background: {
-      primary: '#0F172A',    // Main app background (existing)
-      card: '#1C1C1E',       // Card backgrounds (Apple Health style)
+      primary: '#0a0e1a',    // Main app background (Dark Navy)
+      card: '#1a1f2e',       // Card backgrounds
       elevated: '#242b3d',   // Hover/active states
       modal: '#1a1f2e',      // Modal overlays
     },
