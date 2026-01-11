@@ -129,9 +129,10 @@ const scheduleWindowNotification = async (window: string) => {
         data: { type: 'danger_hour_recurring', hour: targetHour, window },
       },
       trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
         hour: targetHour,
         minute: 0,
+        repeats: true,
       },
     });
     
@@ -203,6 +204,7 @@ export const sendTestNotification = async () => {
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
       seconds: 3,
+      repeats: false,
     },
   });
 

@@ -2,15 +2,15 @@ import InterventionModal from '@/app/components/InterventionModal';
 import LapseSupportModal from '@/app/components/LapseSupportModal';
 import { initDataCollection } from '@/app/services/dataCollection';
 import { initInterventions, shouldTriggerIntervention } from '@/app/services/interventions';
-import { predictUrgeRisk } from '@/app/services/mlPredictor';
+import { calculateModelAccuracy, invalidatePredictionCache, predictUrgeRisk } from '@/app/services/mlPredictor';
 import {
-  initNotifications,
-  scheduleDangerHourNotifications
+    initNotifications,
+    scheduleDangerHourNotifications
 } from '@/app/services/notifications';
 import {
-  getNextSafeHarbor,
-  getRiskForCurrentHour as getProfileRisk,
-  initRiskProfile
+    getNextSafeHarbor,
+    getRiskForCurrentHour as getProfileRisk,
+    initRiskProfile
 } from '@/app/services/riskProfile';
 // JITAI Components
 import { AccuracyBadge } from '@/components/ui/accuracy-badge';
@@ -19,21 +19,38 @@ import { CircleActionButton } from '@/components/ui/circle-action-button';
 import { RiskGauge } from '@/components/ui/risk-gauge';
 import { StarField } from '@/components/ui/star-field';
 import { theme } from '@/constants/theme';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Easing, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Dimensions, Easing, LayoutAnimation, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, UIManager, View } from 'react-native';
 import {
-  getCurrentRisk,
-  getSafeHarborTime,
-  getRiskForCurrentHour as getScreenRisk,
-  initRiskAnalysis,
-  RiskAssessment
+    getSafeHarborTime,
+    getRiskForCurrentHour as getScreenRisk,
+    initRiskAnalysis,
+    RiskAssessment
 } from '../services/riskAnalysis';
+
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const formatTimeAgo = (timestamp: number) => {
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  return `${minutes}m ago`;
+};
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -46,8 +63,13 @@ export default function HomeScreen() {
     probability: number;
     confidence: string;
     riskLevel: string;
-    reasoning: string[];
+    factors: { label: string; impact: number; severity: 'high' | 'medium' | 'low' | 'protective'; }[];
   } | null>(null);
+
+  // New UI States
+  const [isWhyExpanded, setIsWhyExpanded] = useState(false);
+  const [lastSuccessTime, setLastSuccessTime] = useState<string | null>(null);
+  const [trendData, setTrendData] = useState<{ change: number; direction: 'up' | 'down' | 'flat'; label: string } | null>(null);
   
   // Live risk score from database (updated on tab focus)
   const [liveRiskScore, setLiveRiskScore] = useState<number>(47); // Default to JITAI placeholder
@@ -82,41 +104,16 @@ export default function HomeScreen() {
   // Refresh risk data when tab is focused
   useFocusEffect(
     useCallback(() => {
-      const refreshRiskData = async () => {
-        await initRiskProfile();
-        await initRiskAnalysis();
-        
-        // Get risk from both sources and combine them
-        const profileRisk = await getProfileRisk(); // Based on urge patterns
-        const screenRisk = await getScreenRisk();   // Based on screen_on events
-        
-        // Combine: weighted average (60% screen activity, 40% urge history)
-        const combinedRisk = Math.round((screenRisk * 0.6) + (profileRisk * 0.4));
-        setLiveRiskScore(combinedRisk);
-        
-        // Get next safe harbor time from profile
-        const nextSafe = await getNextSafeHarbor();
-        setSafeHarbor(nextSafe);
-        
-        // Get safe harbor from database (screen_on based)
-        const dbSafe = await getSafeHarborTime();
-        setDbSafeHarbor(dbSafe);
-        
-        // Calculate JITAI metrics
-        await calculateJITAIMetrics();
-        
-        console.log('📊 Tab focused - Screen risk:', screenRisk, '%, Profile risk:', profileRisk, '%, Combined:', combinedRisk, '%');
-        console.log('🏠 Safe harbor (profile):', nextSafe?.label || 'none');
-        console.log('🏠 Safe harbor (DB):', dbSafe?.timeRemaining || 'none', 'until', dbSafe?.safeHourLabel || 'N/A');
-      };
-      
-      refreshRiskData();
+      loadRiskData();
     }, [db])
   );
 
   // Calculate JITAI metrics from database
-  const calculateJITAIMetrics = async () => {
+  const calculateJITAIMetrics = async (currentRisk?: number) => {
     if (!db) return;
+    
+    // Use the provided risk or fallback to state (careful of stale state!)
+    const activeScore = currentRisk ?? liveRiskScore;
     
     try {
       // Count high-risk windows (interventions triggered)
@@ -136,9 +133,9 @@ export default function HomeScreen() {
       setNavigatedWindows(navigated);
       
       // Calculate confidence interval based on current risk
-      const riskVariance = Math.max(5, Math.floor(liveRiskScore * 0.15));
-      setConfidenceMin(Math.max(0, liveRiskScore - riskVariance));
-      setConfidenceMax(Math.min(100, liveRiskScore + riskVariance));
+      const riskVariance = Math.max(5, Math.floor(activeScore * 0.15));
+      setConfidenceMin(Math.max(0, activeScore - riskVariance));
+      setConfidenceMax(Math.min(100, activeScore + riskVariance));
       
       // Calculate model accuracy based on prediction success
       // (For now, use ML prediction confidence or default)
@@ -161,8 +158,57 @@ export default function HomeScreen() {
       // Update last updated timestamp
       setLastUpdated('Just now');
       
+      // Fetch last success (any safe check-in)
+      const lastSafe = await db.getFirstAsync<{timestamp: number}>(
+        'SELECT timestamp FROM logs WHERE type = ? ORDER BY timestamp DESC LIMIT 1',
+        ['safe']
+      );
+      if (lastSafe) {
+        setLastSuccessTime(formatTimeAgo(lastSafe.timestamp));
+      } else {
+        setLastSuccessTime(null);
+      }
+      
     } catch (error) {
       console.log('Error calculating JITAI metrics:', error);
+    }
+  };
+
+  // Calculate Trend: Compare current score to ~1 hour ago
+  const updateRiskTrend = async (currentScore: number) => {
+    if (!db) return;
+    
+    // 1. Save current snapshot
+    await db.runAsync(
+      'INSERT INTO risk_history (score, timestamp) VALUES (?, ?)',
+      [currentScore, Date.now()]
+    );
+    
+    // 2. Find score from ~1 hour ago (45-75 mins ago)
+    const oneHourAgo = Date.now() - (60 * 60 * 1000);
+    const windowStart = oneHourAgo - (15 * 60 * 1000);
+    const windowEnd = oneHourAgo + (15 * 60 * 1000);
+    
+    const pastRecord = await db.getFirstAsync<{ score: number, timestamp: number }>(
+      'SELECT score, timestamp FROM risk_history WHERE timestamp BETWEEN ? AND ? ORDER BY ABS(timestamp - ?) LIMIT 1',
+      [windowStart, windowEnd, oneHourAgo]
+    );
+
+    if (pastRecord) {
+      const diff = currentScore - pastRecord.score;
+      const direction = diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat';
+      const timeDiffMins = Math.round((Date.now() - pastRecord.timestamp) / 60000);
+      let timeLabel = `${timeDiffMins}m ago`;
+      if (timeDiffMins >= 60) timeLabel = '1h ago';
+      
+      setTrendData({
+        change: Math.abs(diff),
+        direction,
+        label: timeLabel
+      });
+    } else {
+        // No history yet? No trend.
+        setTrendData(null);
     }
   };
 
@@ -203,6 +249,26 @@ export default function HomeScreen() {
       CREATE TABLE IF NOT EXISTS logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         type TEXT NOT NULL,
+        timestamp INTEGER NOT NULL
+      );
+    `);
+
+    // Create check_ins table for rich metadata
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS check_ins (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp INTEGER NOT NULL,
+        feeling TEXT NOT NULL, -- 'good' | 'struggling'
+        stress_level INTEGER DEFAULT 0,
+        loneliness_level INTEGER DEFAULT 0
+      );
+    `);
+
+    // Create risk_history table for trend analysis
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS risk_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        score INTEGER NOT NULL,
         timestamp INTEGER NOT NULL
       );
     `);
@@ -255,21 +321,55 @@ export default function HomeScreen() {
 
   const loadRiskData = async () => {
     try {
-      const riskLevel = await getCurrentRisk();
-      const prediction = await predictUrgeRisk();
+      await initRiskProfile();
+      await initRiskAnalysis();
       
-      console.log('📊 Current Risk:', riskLevel?.percentage, '% at', new Date().toLocaleTimeString());
-      console.log('🤖 ML Prediction:', prediction);
+      // 1. Get raw source data
+      const profileRisk = await getProfileRisk(); // Based on urge patterns
+      const screenRisk = await getScreenRisk();   // Based on screen_on events
+      const prediction = await predictUrgeRisk(); // ML Model (System 1)
       
-      setRisk(riskLevel);
+      // 2. PRIMARY SCORE: Use ML Prediction logic
+      let primaryRisk = prediction.probability * 100;
+      
+      // Phase 3: Fallback if ML confidence is low (System 1 + System 2 Hybrid)
+      if (prediction.confidence === 'low') {
+          const heuristicRisk = (screenRisk * 0.6) + (profileRisk * 0.4);
+          primaryRisk = (primaryRisk * 0.4) + (heuristicRisk * 0.6); // Weight heuristics more heavily when ML is cold
+      }
+
+      // 3. Stabilization: Round to nearest 5 to prevent UI jitter
+      const stabilizedRisk = Math.round(primaryRisk / 5) * 5;
+
+      setLiveRiskScore(stabilizedRisk);
       setMlPrediction(prediction);
+      
+      // 4. Update Trend & History
+      await updateRiskTrend(stabilizedRisk);
+
+      // 5. Update JITAI Context (Pass new score to avoid stale state)
+      await calculateJITAIMetrics(stabilizedRisk);
+      
+      // 6. Update Model Accuracy (Real-time Audit)
+      const accuracy = await calculateModelAccuracy();
+      setModelAccuracy(accuracy);
+      
+      // Get safe harbor data
+      const nextSafe = await getNextSafeHarbor();
+      setSafeHarbor(nextSafe);
+      const dbSafe = await getSafeHarborTime();
+      setDbSafeHarbor(dbSafe);
+      
+      console.log('🤖 ML Prediction:', prediction.probability, 'Confidence:', prediction.confidence);
+      console.log('📊 Final Risk Score:', stabilizedRisk, '%');
 
       // Auto-trigger intervention if in danger zone
-      if (riskLevel && riskLevel.percentage >= 70) {
-        const shouldShow = await shouldTriggerIntervention(riskLevel.percentage);
+      if (stabilizedRisk >= 60) { // Lowered threshold slightly for responsiveness
+        const shouldShow = await shouldTriggerIntervention(stabilizedRisk);
         
         if (shouldShow) {
           console.log('🚨 AUTO-TRIGGERING INTERVENTION');
+          // Update weather to storm immediately
           setTimeout(() => {
             setShowIntervention(true);
           }, 500);
@@ -277,6 +377,40 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.error('Error loading risk data:', error);
+    }
+  };
+
+  const handleCheckIn = async (status: 'good' | 'struggling') => {
+    if (!db) return;
+    const timestamp = Date.now();
+    
+    try {
+      // 1. Save rich data
+      await db.runAsync(
+        'INSERT INTO check_ins (timestamp, feeling, stress_level, loneliness_level) VALUES (?, ?, ?, ?)',
+        [timestamp, status, status === 'struggling' ? 1 : 0, status === 'struggling' ? 1 : 0]
+      );
+
+      // 2. Log event context
+      if (status === 'struggling') {
+        await logEvent('urge'); // Log as urge-like event for tracking
+      } else {
+        await logEvent('safe'); // Standard safe check-in
+      }
+
+      // 3. Trigger Active Risk Refresh (JITAI)
+      // We force a recalculation because user state just changed!
+      invalidatePredictionCache();
+      await loadRiskData(); 
+
+      // 4. UI Feedback
+      if (status === 'good') {
+        Alert.alert("Great to hear!", "Your risk score has been updated with this positive data point.");
+      } else {
+        setShowIntervention(true);
+      }
+    } catch (error) {
+      console.log('Error saving check-in:', error);
     }
   };
 
@@ -411,6 +545,12 @@ export default function HomeScreen() {
     return `Why ${percentage}%?\n\n${timeContext.charAt(0).toUpperCase() + timeContext.slice(1)} combined with your personal triggers.\n\n${dataNote}`;
   };
 
+  // Toggle Risk Details Collapsible
+  const toggleRiskDetails = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setIsWhyExpanded(!isWhyExpanded);
+  };
+
   // Handle transparency tap on Risk Weather card
   const handleRiskCardTap = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -498,19 +638,110 @@ export default function HomeScreen() {
             size={200}
           />
           {/* Trend Indicator */}
-          <Text style={{ 
-            color: '#4ECDC4', 
-            fontSize: 14, 
-            marginTop: -10, 
-            marginBottom: 20,
-            fontWeight: '600'
-          }}>
-            ↗️ +3% (1h ago)
-          </Text>
+          {trendData && trendData.change > 0 && (
+            <Text style={{ 
+                color: trendData.direction === 'up' ? '#FF6B6B' : '#4ECDC4', 
+                fontSize: 14, 
+                marginTop: -10, 
+                marginBottom: 20,
+                fontWeight: '600'
+            }}>
+                {trendData.direction === 'up' ? '↗️' : '↘️'} {trendData.direction === 'up' ? '+' : '-'}{trendData.change}% ({trendData.label})
+            </Text>
+          )}
+
+          {/* Last Success Reminder */}
+          {lastSuccessTime && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24, paddingHorizontal: 10 }}>
+              <Ionicons name="checkmark-circle" size={16} color="#4ECDC4" style={{ marginRight: 6 }} />
+              <Text style={{ color: '#4ECDC4', fontSize: 13, fontWeight: '500', opacity: 0.9 }}>
+                You navigated a risk {lastSuccessTime}
+              </Text>
+            </View>
+          )}
+
+           {/* Why This Risk? Collapsible */}
+           <View style={{ width: '100%', paddingHorizontal: 20, marginBottom: 20 }}>
+            <TouchableOpacity 
+              onPress={toggleRiskDetails}
+              activeOpacity={0.7}
+              style={{ 
+                flexDirection: 'row', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                backgroundColor: 'rgba(255,255,255,0.05)',
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 20,
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.1)'
+              }}
+            >
+              <Text style={{ color: '#aaa', fontSize: 14, fontWeight: '500', marginRight: 6 }}>
+                Why this risk?
+              </Text>
+              <Ionicons 
+                name={isWhyExpanded ? "chevron-up" : "chevron-down"} 
+                size={16} 
+                color="#aaa" 
+              />
+            </TouchableOpacity>
+            
+            {isWhyExpanded && (
+              <View style={{ 
+                marginTop: 12,
+                backgroundColor: '#1a1f2e',
+                borderRadius: 16,
+                padding: 16,
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.1)'
+              }}>
+                {mlPrediction?.factors && mlPrediction.factors.length > 0 ? (
+                  mlPrediction.factors.map((factor, index) => {
+                    const getDotColor = (severity: string) => {
+                      switch (severity) {
+                        case 'high': return '#FF6B6B';
+                        case 'medium': return '#FFB74D';
+                        case 'low': return '#FFD700';
+                        default: return '#4ECDC4'; // Protective
+                      }
+                    };
+                    const color = getDotColor(factor.severity);
+                    
+                    return (
+                      <View key={index} style={{ flexDirection: 'row', marginBottom: 12, alignItems: 'center' }}>
+                        <View style={{ 
+                          width: 10, 
+                          height: 10, 
+                          borderRadius: 5, 
+                          backgroundColor: color, 
+                          marginRight: 12,
+                          shadowColor: color,
+                          shadowOffset: { width: 0, height: 0 },
+                          shadowOpacity: 0.5,
+                          shadowRadius: 6
+                        }} />
+                        <Text style={{ color: '#ccc', fontSize: 14, flex: 1, lineHeight: 20 }}>
+                          {factor.label}
+                        </Text>
+                        <Text style={{ color: color, fontSize: 13, fontWeight: '700', marginLeft: 8 }}>
+                          {factor.severity === 'protective' ? '-' : '+'}{factor.impact}%
+                        </Text>
+                      </View>
+                    );
+                  })
+                ) : (
+                  <Text style={{ color: '#888', fontSize: 14, fontStyle: 'italic', textAlign: 'center' }}>
+                    Gathering more pattern data...
+                  </Text>
+                )}
+              </View>
+            )}
+           </View>
         </View>
 
         {/* JITAI Intervention Card - Conditional */}
-        {true /* logic placeholder: risk >= 60 && !recentCheckIn */ && (
+        {(mlPrediction?.probability || 0) >= 0.60 && (
            <View style={{
              backgroundColor: '#1a1f2e',
              borderRadius: 16,
@@ -552,25 +783,21 @@ export default function HomeScreen() {
             label="Check-in"
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              logEvent('safe');
               
               // Smart "I'm Good" Integration
               Alert.alert(
-                "Check-in Complete",
+                "Check-in",
                 "How are you feeling right now?",
                 [
                   { 
                     text: "😰 Struggling", 
                     style: 'destructive', 
-                    onPress: () => {
-                      console.log('Struggling');
-                      setShowIntervention(true);
-                    }
+                    onPress: () => handleCheckIn('struggling')
                   },
                   { 
                     text: "✅ I'm Good", 
                     style: 'default', 
-                    onPress: () => console.log('Good') 
+                    onPress: () => handleCheckIn('good')
                   }
                 ]
               );
@@ -628,6 +855,10 @@ export default function HomeScreen() {
         visible={showIntervention}
         riskLevel={risk?.percentage || 0}
         onClose={() => setShowIntervention(false)}
+        onComplete={() => {
+          invalidatePredictionCache();
+          loadRiskData();
+        }}
       />
 
       <LapseSupportModal

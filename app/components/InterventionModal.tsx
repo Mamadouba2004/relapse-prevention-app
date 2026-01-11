@@ -23,9 +23,10 @@ interface Props {
   visible: boolean;
   riskLevel: number;
   onClose: () => void;
+  onComplete?: () => void; // Callback to refresh parent
 }
 
-export default function InterventionModal({ visible, riskLevel, onClose }: Props) {
+export default function InterventionModal({ visible, riskLevel, onClose, onComplete }: Props) {
   const [selectedIntervention, setSelectedIntervention] = useState<Intervention | null>(null);
   const [exerciseActive, setExerciseActive] = useState(false);
   const [startTime, setStartTime] = useState(0);
@@ -303,6 +304,7 @@ export default function InterventionModal({ visible, riskLevel, onClose }: Props
                 setSelectedIntervention(null);
                 setSessionId(null);
                 setTapCount(0);
+                if (onComplete) onComplete(); // Trigger refresh on simple close
                 onClose();
               }
             }}
@@ -391,22 +393,31 @@ export default function InterventionModal({ visible, riskLevel, onClose }: Props
               
               // Show the insight
               Alert.alert(
-                '✨ Insight',
+                'Insight',
                 insight,
-                [{ text: 'Thanks!', style: 'default' }]
+                [{ 
+                  text: 'Close', 
+                  onPress: () => {
+                    // Reset state
+                    setShowAfterRating(false);
+                    setShowReflection(false);
+                    setShowBeforeRating(true);
+                    setUrgeIntensityBefore(null);
+                    setUrgeIntensityAfter(null);
+                    setSelectedIntervention(null);
+                    setSessionId(null);
+                    setWhatHelped([]);
+                    setTapCount(0);
+                    
+                    // JITAI Feedback Loop:
+                    if (onComplete) {
+                        onComplete(); // Ensure underlying risk score updates!
+                    }
+
+                    onClose();
+                  }
+                }]
               );
-              
-              // Reset everything and close
-              setShowReflection(false);
-              setShowBeforeRating(true);
-              setUrgeIntensityBefore(null);
-              setUrgeIntensityAfter(null);
-              setSelectedIntervention(null);
-              setSessionId(null);
-              setWhatHelped([]);
-              setTapCount(0);
-              
-              onClose();
             }}
           >
             <Text style={styles.nextButtonText}>
