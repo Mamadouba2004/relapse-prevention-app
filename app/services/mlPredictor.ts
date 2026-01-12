@@ -13,6 +13,7 @@ interface PredictionFeatures {
   isRecentUrge: boolean; // New feature for non-linear refractory period
   stressLevel: number;
   lonelinessLevel: number;
+  sleepPatternRisk: number; // New: 0, 0.5, or 1.0 depending on onboarding
 }
 
 interface PredictionResult {
@@ -85,6 +86,7 @@ export const predictUrgeRisk = async (): Promise<PredictionResult> => {
   z += MODEL_WEIGHTS.isLateNight * (features.isLateNight ? 1 : 0);
   z += MODEL_WEIGHTS.stressLevel * features.stressLevel;
   z += MODEL_WEIGHTS.lonelinessLevel * features.lonelinessLevel;
+  z += features.sleepPatternRisk; // Direct additive risk
   
   const probability = 1 / (1 + Math.exp(-z));
   
@@ -170,21 +172,48 @@ const extractFeatures = async (): Promise<PredictionFeatures> => {
     console.log('Routine table not available for ML prediction');
   }
 
-  // Get latest stress/loneliness context
+  // Get latest stress/loneliness context or fallback to onboarding baseline
   let stressLevel = 1; // Default to "okay"
   let lonelinessLevel = 1; // Default to "okay"
+  let sleepPatternRisk = 0; // Default low risk
 
   try {
+    // 1. Try to get real-time state from check-ins
     const lastCheckIn = await db.getAllAsync<{ stress_level: number, loneliness_level: number }>(
       'SELECT stress_level, loneliness_level FROM check_ins ORDER BY timestamp DESC LIMIT 1'
     );
     
+    // 2. Get baseline from profile
+    const profile = await db.getAllAsync<{ 
+      baseline_stress: number, 
+      baseline_loneliness: number,
+      sleep_pattern: string 
+    }>(
+      'SELECT baseline_stress, baseline_loneliness, sleep_pattern FROM user_profile ORDER BY created_at DESC LIMIT 1'
+    );
+
     if (lastCheckIn.length > 0) {
+      // Use fresh data if available
       stressLevel = lastCheckIn[0].stress_level ?? 1;
       lonelinessLevel = lastCheckIn[0].loneliness_level ?? 1;
+    } else if (profile.length > 0) {
+      // Fallback to cold-start baseline
+      stressLevel = profile[0].baseline_stress ?? 1;
+      lonelinessLevel = profile[0].baseline_loneliness ?? 1;
     }
+
+    // 3. Calculate Sleep Pattern Risk
+    if (profile.length > 0) {
+      const sp = profile[0].sleep_pattern;
+      if ((sp === 'very_late' && hour >= 22) || (sp === 'night_owl' && hour >= 23)) {
+        sleepPatternRisk = 1.0; // Compound risk: Late night + Night owl habits
+      } else if (sp === 'irregular') {
+        sleepPatternRisk = 0.5; // Baseline elevated risk due to instability
+      }
+    }
+
   } catch (err) {
-    console.log('Check_ins table not available for ML prediction');
+    console.log('Data sources check failed for ML prediction');
   }
   
   return {
@@ -197,6 +226,7 @@ const extractFeatures = async (): Promise<PredictionFeatures> => {
     isRecentUrge: hoursSinceLastUrge < 2,
     stressLevel,
     lonelinessLevel,
+    sleepPatternRisk,
   };
 };
 
@@ -240,6 +270,15 @@ const generateReasoning = (features: PredictionFeatures, probability: number): R
       label: isHigh ? 'High stress level (😰)' : 'Moderate stress',
       impact: isHigh ? 32 : 16,
       severity: isHigh ? 'high' : 'medium'
+    });
+  }
+
+  // Sleep Pattern Risk (New)
+  if (features.sleepPatternRisk > 0) {
+    factors.push({
+      label: features.sleepPatternRisk >= 1.0 ? 'Late night risk pattern' : 'Irregular sleep schedule',
+      impact: Math.round(features.sleepPatternRisk * 20),
+      severity: features.sleepPatternRisk >= 1.0 ? 'high' : 'medium'
     });
   }
 

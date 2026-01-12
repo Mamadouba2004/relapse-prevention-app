@@ -4,13 +4,13 @@ import { initDataCollection } from '@/app/services/dataCollection';
 import { initInterventions, shouldTriggerIntervention } from '@/app/services/interventions';
 import { calculateModelAccuracy, invalidatePredictionCache, predictUrgeRisk } from '@/app/services/mlPredictor';
 import {
-    initNotifications,
-    scheduleDangerHourNotifications
+  initNotifications,
+  scheduleDangerHourNotifications
 } from '@/app/services/notifications';
 import {
-    getNextSafeHarbor,
-    getRiskForCurrentHour as getProfileRisk,
-    initRiskProfile
+  getNextSafeHarbor,
+  getRiskForCurrentHour as getProfileRisk,
+  initRiskProfile
 } from '@/app/services/riskProfile';
 // JITAI Components
 import { AccuracyBadge } from '@/components/ui/accuracy-badge';
@@ -28,10 +28,10 @@ import * as SQLite from 'expo-sqlite';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Easing, LayoutAnimation, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, UIManager, View } from 'react-native';
 import {
-    getSafeHarborTime,
-    getRiskForCurrentHour as getScreenRisk,
-    initRiskAnalysis,
-    RiskAssessment
+  getSafeHarborTime,
+  getRiskForCurrentHour as getScreenRisk,
+  initRiskAnalysis,
+  RiskAssessment
 } from '../services/riskAnalysis';
 
 if (
@@ -881,6 +881,9 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
     screenTime: '',
     riskHours: [] as string[],
     triggers: [] as string[],
+    baselineStress: null as number | null,
+    baselineLoneliness: null as number | null,
+    sleepPattern: '',
     alonePattern: '',
     dayPattern: '',
     urgeDuration: '',
@@ -900,6 +903,9 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
         screen_time TEXT,
         risk_hours TEXT,
         triggers TEXT,
+        baseline_stress INTEGER,
+        baseline_loneliness INTEGER,
+        sleep_pattern TEXT,
         alone_pattern TEXT,
         day_pattern TEXT,
         urge_duration TEXT,
@@ -915,6 +921,9 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
         screen_time,
         risk_hours,
         triggers,
+        baseline_stress,
+        baseline_loneliness,
+        sleep_pattern,
         alone_pattern,
         day_pattern,
         urge_duration,
@@ -922,11 +931,14 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
         emergency_contact_phone,
         uses_phone_as_alarm,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.screenTime,
         JSON.stringify(data.riskHours),
         JSON.stringify(data.triggers),
+        data.baselineStress ?? 1,
+        data.baselineLoneliness ?? 1,
+        data.sleepPattern,
         data.alonePattern,
         data.dayPattern,
         data.urgeDuration,
@@ -952,11 +964,14 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
       case 1: return data.screenTime !== '';
       case 2: return data.riskHours.length > 0;
       case 3: return data.triggers.length > 0;
-      case 4: return data.alonePattern !== '';
-      case 5: return data.urgeDuration !== '';
-      case 6: return data.emergencyContactName !== '' && data.emergencyContactPhone !== '';
-      case 7: return data.dayPattern !== '';
-      case 8: return data.usesPhoneAsAlarm !== '';
+      case 4: return data.baselineStress !== null;
+      case 5: return data.baselineLoneliness !== null;
+      case 6: return data.sleepPattern !== '';
+      case 7: return data.alonePattern !== '';
+      case 8: return data.urgeDuration !== '';
+      case 9: return data.emergencyContactName !== '' && data.emergencyContactPhone !== '';
+      case 10: return data.dayPattern !== '';
+      case 11: return data.usesPhoneAsAlarm !== '';
       default: return false;
     }
   };
@@ -1067,6 +1082,97 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
       case 4:
         return (
           <>
+            <Text style={onboardingStyles.title}>Baseline Stress? 😰</Text>
+            <Text style={onboardingStyles.subtitle}>How stressed have you been feeling lately?</Text>
+
+            {[
+              { label: '😌 Calm and manageable', value: 0 },
+              { label: '😐 Some stress, handling it', value: 1 },
+              { label: '😰 Very stressed, struggling', value: 2 },
+            ].map(option => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  onboardingStyles.optionButton,
+                  data.baselineStress === option.value && onboardingStyles.optionSelected
+                ]}
+                onPress={() => setData({...data, baselineStress: option.value})}
+              >
+                <Text style={[
+                  onboardingStyles.optionText,
+                  data.baselineStress === option.value && onboardingStyles.optionTextSelected
+                ]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </>
+        );
+
+      case 5:
+        return (
+          <>
+            <Text style={onboardingStyles.title}>Connection? 👥</Text>
+            <Text style={onboardingStyles.subtitle}>How connected do you feel to others right now?</Text>
+
+            {[
+              { label: '👥 Well-connected, strong support', value: 0 },
+              { label: '🤝 Some connections, could be better', value: 1 },
+              { label: '🙍 Feeling lonely or isolated', value: 2 },
+            ].map(option => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  onboardingStyles.optionButton,
+                  data.baselineLoneliness === option.value && onboardingStyles.optionSelected
+                ]}
+                onPress={() => setData({...data, baselineLoneliness: option.value})}
+              >
+                <Text style={[
+                  onboardingStyles.optionText,
+                  data.baselineLoneliness === option.value && onboardingStyles.optionTextSelected
+                ]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </>
+        );
+
+      case 6:
+        return (
+          <>
+            <Text style={onboardingStyles.title}>Sleep Pattern? 🛌</Text>
+            <Text style={onboardingStyles.subtitle}>What's your typical bedtime?</Text>
+
+            {[
+              { label: '🛌 Regular (before 11 PM)', value: 'regular' },
+              { label: '🌙 Night owl (11 PM - 1 AM)', value: 'night_owl' },
+              { label: '🦉 Very late (after 1 AM)', value: 'very_late' },
+              { label: '😵 Irregular, varies a lot', value: 'irregular' },
+            ].map(option => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  onboardingStyles.optionButton,
+                  data.sleepPattern === option.value && onboardingStyles.optionSelected
+                ]}
+                onPress={() => setData({...data, sleepPattern: option.value})}
+              >
+                <Text style={[
+                  onboardingStyles.optionText,
+                  data.sleepPattern === option.value && onboardingStyles.optionTextSelected
+                ]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </>
+        );
+
+      case 7:
+        return (
+          <>
             <Text style={onboardingStyles.title}>Alone during urges? 🏠</Text>
             <Text style={onboardingStyles.subtitle}>Usually alone when urges happen?</Text>
 
@@ -1095,7 +1201,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
           </>
         );
 
-      case 5:
+      case 8:
         return (
           <>
             <Text style={onboardingStyles.title}>Urge duration? ⏱️</Text>
@@ -1126,7 +1232,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
           </>
         );
 
-      case 6:
+      case 9:
         return (
           <>
             <Text style={onboardingStyles.title}>Emergency Contact 📞</Text>
@@ -1174,7 +1280,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
           </>
         );
 
-      case 7:
+      case 10:
         return (
           <>
             <Text style={onboardingStyles.title}>Day patterns? 📅</Text>
@@ -1204,7 +1310,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
           </>
         );
 
-      case 8:
+      case 11:
         return (
           <>
             <Text style={onboardingStyles.title}>Phone as alarm? ⏰</Text>
@@ -1240,9 +1346,9 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
   return (
     <ScrollView style={onboardingStyles.container}>
       <View style={onboardingStyles.progressContainer}>
-        <Text style={onboardingStyles.progressText}>Step {step} of 8</Text>
+        <Text style={onboardingStyles.progressText}>Step {step} of 11</Text>
         <View style={onboardingStyles.progressBar}>
-          <View style={[onboardingStyles.progressFill, { width: `${(step / 8) * 100}%` }]} />
+          <View style={[onboardingStyles.progressFill, { width: `${(step / 11) * 100}%` }]} />
         </View>
       </View>
 
@@ -1265,7 +1371,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
           ]}
           disabled={!canProceed()}
           onPress={() => {
-            if (step === 8) {
+            if (step === 11) {
               saveProfile();
             } else {
               setStep(step + 1);
@@ -1273,7 +1379,7 @@ function OnboardingFlow({ onComplete, db }: OnboardingFlowProps) {
           }}
         >
           <Text style={onboardingStyles.nextButtonText}>
-            {step === 8 ? 'Complete Setup ✓' : 'Next →'}
+            {step === 11 ? 'Complete Setup ✓' : 'Next →'}
           </Text>
         </TouchableOpacity>
       </View>
