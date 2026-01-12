@@ -48,7 +48,7 @@ function LearnCard({ icon, title, description }: { icon: keyof typeof MaterialCo
   return (
     <TouchableOpacity style={styles.card}>
       <View style={styles.iconContainer}>
-        <MaterialCommunityIcons name={icon} size={32} color={theme.colors.primary} />
+        <MaterialCommunityIcons name={icon} size={32} color={theme.colors.accent.primary} />
       </View>
       <View style={styles.cardContent}>
         <Text style={styles.cardTitle}>{title}</Text>
