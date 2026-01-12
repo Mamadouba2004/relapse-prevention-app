@@ -14,6 +14,10 @@ Notifications.setNotificationHandler({
   }),
 });
 
+import { Alert } from 'react-native';
+
+// ... imports ...
+
 export const initNotifications = async () => {
   if (!Device.isDevice) {
     console.log('Notifications only work on physical devices');
@@ -31,8 +35,17 @@ export const initNotifications = async () => {
 
   if (finalStatus !== 'granted') {
     console.log('Failed to get push notification permissions');
+    Alert.alert(
+      'Notifications Required',
+      'To help you during danger hours, please enable notifications in your phone settings.',
+      [{ text: 'OK' }]
+    );
     return false;
   }
+  
+  // Note: "Screen Time" tracking uses AppState (foreground/background) 
+  // and does not require a special OS permission on iOS/Android for this method.
+  console.log('✅ Notification permissions granted');
 
   return true;
 };
@@ -82,19 +95,42 @@ const scheduleWindowNotification = async (window: string) => {
   // Schedule one check-in per window (first hour of window)
   if (hours.length > 0) {
     const targetHour = hours[0];
+    const lastHour = hours[hours.length - 1];
     
     // Calculate next occurrence in LOCAL time
     const now = new Date();
     const localHour = now.getHours();
     const localMinute = now.getMinutes();
     
-    // Create target date for today at the target hour (local time)
+    // Create target date for the one-off notification
     const targetDate = new Date();
-    targetDate.setHours(targetHour, 0, 0, 0);
     
-    // If target time has passed today, schedule for tomorrow
-    if (targetHour < localHour || (targetHour === localHour && localMinute > 0)) {
-      targetDate.setDate(targetDate.getDate() + 1);
+    // LOGIC FIX: Check if we are currently INSIDE the danger window
+    // If inside, schedule an immediate catch-up notification (e.g., in 2 minutes)
+    // instead of waiting for the next cycle (which might be tomorrow).
+    if (hours.includes(localHour)) {
+      console.log(`⚠️ Currently inside "${window}" window (Hour: ${localHour}). Scheduling immediate catch-up.`);
+      targetDate.setMinutes(localMinute + 2); // Fire in 2 minutes
+      targetDate.setSeconds(0);
+    } 
+    // If not inside, use standard scheduling logic
+    else {
+      targetDate.setHours(targetHour, 0, 0, 0);
+      
+      // If target time has passed today (and we are not inside the window), schedule for tomorrow
+      // Special case for 'verylate' (0-5) where target (0) is less than current (23) but is technically "next"
+      if (localHour > lastHour) {
+        // Past the entire window for today -> Tomorrow
+        targetDate.setDate(targetDate.getDate() + 1);
+      } else if (localHour > targetHour && !hours.includes(localHour)) {
+        // Example: Now 12, Window 6-10. Not in window, past start. Tomorrow.
+         targetDate.setDate(targetDate.getDate() + 1);
+      }
+       // If localHour < targetHour (e.g. Now 22, Target 0), targetDate (Today 00:00) is in past.
+       // We need Tomorrow 00:00.
+       if (targetDate.getTime() < now.getTime()) {
+          targetDate.setDate(targetDate.getDate() + 1);
+       }
     }
     
     // Generate contextual message (will use mock LLM)
@@ -102,10 +138,8 @@ const scheduleWindowNotification = async (window: string) => {
     
     // Log for debugging
     console.log(`📅 Scheduling "${window}" notification:`);
-    console.log(`   Target hour: ${targetHour}:00 (local time)`);
-    console.log(`   Current local time: ${localHour}:${localMinute.toString().padStart(2, '0')}`);
-    console.log(`   Will trigger at: ${targetDate.toLocaleString()}`);
-    console.log(`   Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+    console.log(`   Target hour: ${targetHour}:00 (Recurring)`);
+    console.log(`   One-off trigger: ${targetDate.toLocaleString()} (Local)`);
 
     // Use DATE trigger for first occurrence (guaranteed local time)
     await Notifications.scheduleNotificationAsync({
