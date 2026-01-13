@@ -1,5 +1,7 @@
+import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { Platform, StyleSheet } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -21,7 +23,7 @@ export default function TabLayout() {
           left: 20,
           right: 20,
           height: 64,
-          backgroundColor: '#0F172A',
+          backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#0F172A', // Glass on iOS, Solid on Android (BlurView experimental on Android)
           borderRadius: 32,
           borderTopWidth: 0,
           shadowColor: '#000',
@@ -39,8 +41,18 @@ export default function TabLayout() {
           paddingVertical: 8,
         },
         tabBarBackground: () => (
-          // Optional: Add blur effect here if needed
-          null
+          Platform.OS === 'ios' ? (
+            <BlurView
+              intensity={40}
+              tint="dark"
+              style={{
+                ...StyleSheet.absoluteFillObject,
+                borderRadius: 32,
+                overflow: 'hidden',
+                backgroundColor: 'rgba(15, 23, 42, 0.5)', // Semi-transparent fallback/tint
+              }}
+            />
+          ) : null
         ),
       }}>
       <Tabs.Screen
