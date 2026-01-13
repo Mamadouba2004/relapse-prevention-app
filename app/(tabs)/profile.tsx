@@ -302,7 +302,7 @@ export default function ProfileScreen() {
                         >
                             <MaterialCommunityIcons
                                 name={getTriggerIcon(trigger)}
-                                size={24}
+                                size={36}
                                 color="#F59E0B"
                             />
                             <Text style={styles.triggerChipLabel}>
@@ -497,20 +497,20 @@ const styles = StyleSheet.create({
   // Triggers Horizontal Scroll
   triggersScrollContent: {
     paddingHorizontal: 4,
-    gap: 8,
+    gap: 12,
   },
   triggerChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: 'rgba(251, 191, 36, 0.3)',
   },
   triggerChipLabel: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
     color: '#F59E0B',
   },
