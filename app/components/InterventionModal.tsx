@@ -21,12 +21,21 @@ import { generatePostInterventionInsight } from '../services/llmService';
 
 interface Props {
   visible: boolean;
-  riskLevel: number;
+  riskLevel?: number; // Made optional
   onClose: () => void;
   onComplete?: () => void; // Callback to refresh parent
+  mlPrediction?: any; // Added
+  onHelpReceived?: (interventionType: any, helpful: boolean) => Promise<void>; // Added
 }
 
-export default function InterventionModal({ visible, riskLevel, onClose, onComplete }: Props) {
+export default function InterventionModal({ 
+  visible, 
+  riskLevel = 50, // Default value
+  onClose, 
+  onComplete,
+  mlPrediction,
+  onHelpReceived
+}: Props) {
   const [selectedIntervention, setSelectedIntervention] = useState<Intervention | null>(null);
   const [exerciseActive, setExerciseActive] = useState(false);
   const [startTime, setStartTime] = useState(0);

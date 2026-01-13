@@ -2,47 +2,59 @@ import { schedulePostLapseSupport } from '@/app/services/notifications';
 import * as SQLite from 'expo-sqlite';
 import React, { useState } from 'react';
 import {
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
+  onPlanCreated?: () => void; // Added
 }
 
-export default function LapseSupportModal({ visible, onClose }: Props) {
+export default function LapseSupportModal({ visible, onClose, onPlanCreated }: Props) {
   const [wantsSupport, setWantsSupport] = useState<boolean | null>(null);
   const [supportScheduled, setSupportScheduled] = useState(false);
 
   const scheduleExtraSupport = async () => {
-    const db = await SQLite.openDatabaseAsync('behavior.db');
+    try {
+      const db = await SQLite.openDatabaseAsync('behavior.db');
     
-    // Create lapse_recovery table if doesn't exist
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS lapse_recovery (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        lapse_timestamp INTEGER NOT NULL,
-        extra_support_enabled BOOLEAN,
-        check_in_frequency_hours INTEGER,
-        created_at INTEGER
+      // Create lapse_recovery table if doesn't exist
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS lapse_recovery (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          lapse_timestamp INTEGER NOT NULL,
+          extra_support_enabled BOOLEAN,
+          check_in_frequency_hours INTEGER,
+          created_at INTEGER
+        );
+      `);
+
+      // Schedule extra support for next 48 hours
+      await db.runAsync(
+        'INSERT INTO lapse_recovery (lapse_timestamp, extra_support_enabled, check_in_frequency_hours, created_at) VALUES (?, ?, ?, ?)',
+        [Date.now(), true, 2, Date.now()]
       );
-    `);
 
-    // Schedule extra support for next 48 hours
-    await db.runAsync(
-      'INSERT INTO lapse_recovery (lapse_timestamp, extra_support_enabled, check_in_frequency_hours, created_at) VALUES (?, ?, ?, ?)',
-      [Date.now(), true, 2, Date.now()]
-    );
+      // Schedule actual notifications
+      await schedulePostLapseSupport();
 
-    // Schedule actual notifications
-    await schedulePostLapseSupport();
+      setSupportScheduled(true);
+      
+      if (onPlanCreated) {
+        onPlanCreated();
+      }
 
-    setSupportScheduled(true);
+    } catch (error) {
+      console.log('Error scheduling support:', error);
+      Alert.alert('Error', 'Could not schedule support plan');
+    }
   };
 
   if (wantsSupport === null) {
