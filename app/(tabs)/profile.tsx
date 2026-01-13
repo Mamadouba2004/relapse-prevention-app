@@ -121,8 +121,19 @@ export default function ProfileScreen() {
       stroke: "#EF4444"
     },
     propsForLabels: {
-        fontSize: 11,
-        fill: "#94A3B8" 
+        fontSize: 14,
+        fontWeight: "600",
+        fill: "#9CA3AF"
+    },
+    propsForVerticalLabels: {
+        fontSize: 14,
+        fontWeight: "600",
+        fill: "#9CA3AF"
+    },
+    propsForHorizontalLabels: {
+        fontSize: 16,
+        fontWeight: "500",
+        fill: "#6B7280"
     },
     fillShadowGradientFrom: "#EF4444",
     fillShadowGradientTo: "#14B8A6",
@@ -138,9 +149,19 @@ export default function ProfileScreen() {
       'angry': 'emoticon-angry-outline',
       'sad': 'emoticon-sad-outline',
       'hungry': 'food-apple-outline',
+      'socialmedia': 'cellphone-remove',
     };
-    return iconMap[trigger.toLowerCase()] || 'alert-outline';
+    return iconMap[trigger.toLowerCase()] || 'alert-circle-outline';
   };
+
+  const getTriggerLabel = (trigger: string): string => {
+    const labelMap: Record<string, string> = {
+      'socialmedia': 'Social Media',
+      'videogames': 'Video Games',
+    };
+    return labelMap[trigger.toLowerCase()] || (trigger.charAt(0).toUpperCase() + trigger.slice(1));
+  };
+
 
   const handleDataPointClick = ({ index, value, x, y }: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -173,7 +194,7 @@ export default function ProfileScreen() {
                 colors={['#1a2332', '#0f1419']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                style={styles.cardGradient}
+                style={[styles.cardGradient, { padding: 16 }]}
             >
                 <View style={styles.cardHeader}>
                     <Text style={styles.cardTitle}>24-Hour Risk Flow</Text>
@@ -184,18 +205,20 @@ export default function ProfileScreen() {
                     )}
                 </View>
 
-                <LineChart
-                    data={chartData}
-                    width={screenWidth - 48} // Padding adjustments
-                    height={220}
-                    chartConfig={chartConfig}
-                    bezier
-                    style={styles.chart}
-                    onDataPointClick={handleDataPointClick}
-                    withInnerLines={true}
-                    withOuterLines={false}
-                    withVerticalLines={false}
-                />
+                <View style={{ alignItems: 'center' }}>
+                    <LineChart
+                        data={chartData}
+                        width={screenWidth - (20 * 2) - (16 * 2) - 10} // screenPad - cardPad - safety
+                        height={264}
+                        chartConfig={chartConfig}
+                        bezier
+                        style={styles.chart}
+                        onDataPointClick={handleDataPointClick}
+                        withInnerLines={true}
+                        withOuterLines={false}
+                        withVerticalLines={false}
+                    />
+                </View>
             </LinearGradient>
         </Animated.View>
 
@@ -275,11 +298,11 @@ export default function ProfileScreen() {
                              >
                                 <MaterialCommunityIcons 
                                     name={getTriggerIcon(trigger)} 
-                                    size={32} 
+                                    size={52} 
                                     color="#F59E0B" 
                                 />
                                 <Text style={styles.gridItemLabel}>
-                                    {trigger.charAt(0).toUpperCase() + trigger.slice(1)}
+                                    {getTriggerLabel(trigger)}
                                 </Text>
                              </LinearGradient>
                         </View>
@@ -472,20 +495,25 @@ const styles = StyleSheet.create({
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -8, // compensate for padding
+    marginHorizontal: -6, 
   },
   gridItemWrapper: {
-    width: '33.33%', // 3 columns
-    padding: 8,
+    flexBasis: '33.33%', // Try to fit 3 if screen is wide enough or text is short
+    flexGrow: 1,         // Allow growth to fill space
+    minWidth: 110,       // Prevent crushing text (forces wrap for long words)
+    padding: 6,
   },
   gridItemGradient: {
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 20,
+    paddingVertical: 20,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(251, 191, 36, 0.3)',
-    height: 110,
+    aspectRatio: 1, // Make them square-ish like the window design might imply? Or flexible height.
+    minHeight: 120,
+    width: '100%',
   },
   gridItemLabel: {
     fontSize: 13,
