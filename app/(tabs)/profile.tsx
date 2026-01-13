@@ -1,12 +1,12 @@
+import { SpaceBackground } from '@/components/ui/space-background';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { SpaceBackground } from '@/components/ui/space-background';
 import {
   calculate24HourProfile,
   formatHour,
@@ -288,26 +288,29 @@ export default function ProfileScreen() {
             <Animated.View entering={FadeInDown.delay(500).duration(500)} style={styles.sectionWrapper}>
                 <Text style={styles.sectionTitle}>Active Triggers</Text>
                 <Text style={styles.sectionSubtitle}>These show up during vulnerable hours</Text>
-                
-                <View style={styles.gridContainer}>
+
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.triggersScrollContent}
+                >
                     {peakWindow.triggers.map((trigger: string, index: number) => (
-                        <View key={index} style={styles.gridItemWrapper}>
-                             <LinearGradient
-                                colors={['rgba(251, 191, 36, 0.15)', 'rgba(217, 119, 6, 0.05)']}
-                                style={styles.gridItemGradient}
-                             >
-                                <MaterialCommunityIcons 
-                                    name={getTriggerIcon(trigger)} 
-                                    size={52} 
-                                    color="#F59E0B" 
-                                />
-                                <Text style={styles.gridItemLabel}>
-                                    {getTriggerLabel(trigger)}
-                                </Text>
-                             </LinearGradient>
-                        </View>
+                        <LinearGradient
+                            key={index}
+                            colors={['rgba(251, 191, 36, 0.15)', 'rgba(217, 119, 6, 0.05)']}
+                            style={styles.triggerChip}
+                        >
+                            <MaterialCommunityIcons
+                                name={getTriggerIcon(trigger)}
+                                size={24}
+                                color="#F59E0B"
+                            />
+                            <Text style={styles.triggerChipLabel}>
+                                {getTriggerLabel(trigger)}
+                            </Text>
+                        </LinearGradient>
                     ))}
-                </View>
+                </ScrollView>
             </Animated.View>
         )}
 
@@ -491,36 +494,25 @@ const styles = StyleSheet.create({
     textShadowRadius: 20,
   },
 
-  // Triggers Grid
-  gridContainer: {
+  // Triggers Horizontal Scroll
+  triggersScrollContent: {
+    paddingHorizontal: 4,
+    gap: 8,
+  },
+  triggerChip: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -6, 
-  },
-  gridItemWrapper: {
-    flexBasis: '33.33%', // Try to fit 3 if screen is wide enough or text is short
-    flexGrow: 1,         // Allow growth to fill space
-    minWidth: 110,       // Prevent crushing text (forces wrap for long words)
-    padding: 6,
-  },
-  gridItemGradient: {
-    borderRadius: 20,
-    paddingVertical: 20,
-    paddingHorizontal: 8,
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(251, 191, 36, 0.3)',
-    aspectRatio: 1, // Make them square-ish like the window design might imply? Or flexible height.
-    minHeight: 120,
-    width: '100%',
   },
-  gridItemLabel: {
+  triggerChipLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: '#F59E0B',
-    marginTop: 12,
-    textAlign: 'center',
   },
 
   bottomFade: {
