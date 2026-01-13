@@ -5,7 +5,6 @@
 
 import { theme } from '@/constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 
@@ -13,10 +12,14 @@ interface CircleActionButtonProps {
   icon?: keyof typeof MaterialCommunityIcons.glyphMap;
   emoji?: string;
   label: string;
-  onPress: () => void;
+  onPress: () => Promise<void> | void;
   highlight?: boolean;
   highlightColor?: string;
   style?: ViewStyle;
+  // Added props
+  size?: number;
+  type?: string;
+  compact?: boolean;
 }
 
 export function CircleActionButton({
@@ -27,46 +30,55 @@ export function CircleActionButton({
   highlight = false,
   highlightColor = theme.colors.accent.success,
   style,
+  size = 60,
+  type, // unused but allowed
+  compact = false,
 }: CircleActionButtonProps) {
-  const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress();
-  };
-
   return (
     <Pressable
-      onPress={handlePress}
+      onPress={onPress}
       style={({ pressed }) => [
-        styles.wrapper,
+        styles.container,
         pressed && styles.pressed,
         style,
+        compact && { minWidth: size },
       ]}
     >
       <View
         style={[
           styles.circle,
-          highlight && { borderColor: highlightColor, borderWidth: 2 },
+          { width: size, height: size, borderRadius: size / 2 },
+          highlight && {
+            backgroundColor: highlightColor,
+            borderColor: highlightColor,
+            shadowColor: highlightColor,
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: 0.5,
+            shadowRadius: 10,
+            elevation: 5,
+          },
         ]}
       >
-        {emoji ? (
-          <Text style={styles.emoji}>{emoji}</Text>
-        ) : icon ? (
+        {icon && (
           <MaterialCommunityIcons
             name={icon}
-            size={28}
-            color={highlight ? highlightColor : theme.colors.text.secondary}
+            size={Math.round(size * 0.4)}
+            color={highlight ? '#FFF' : theme.colors.text.primary}
           />
-        ) : null}
+        )}
+        {emoji && (
+          <Text style={[styles.emoji, { fontSize: Math.round(size * 0.45) }]}>
+            {emoji}
+          </Text>
+        )}
       </View>
-      <Text style={[styles.label, highlight && { color: highlightColor }]}>
-        {label}
-      </Text>
+      {!compact && <Text style={styles.label}>{label}</Text>}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: {
+  container: {
     alignItems: 'center',
     minWidth: 70,
   },
@@ -75,10 +87,6 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.95 }],
   },
   circle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(30, 41, 59, 0.8)',
     borderWidth: 1,
     borderColor: 'rgba(100, 116, 139, 0.3)',
     justifyContent: 'center',
