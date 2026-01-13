@@ -1,10 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
-// Mock LLM service (simulates Claude API responses)
-// Replace with real API later by changing USE_REAL_API to true
-
-const USE_REAL_API = false;
-const ANTHROPIC_API_KEY = 'your-api-key-here'; // Add real key when ready
+// Mock LLM service (simulates intelligent contextual messages)
+// Uses local logic - no external API calls
 
 interface MessageContext {
   currentRisk: number;
@@ -19,12 +16,7 @@ interface MessageContext {
 
 export const generateContextualNotification = async (): Promise<string> => {
   const context = await gatherContext();
-  
-  if (USE_REAL_API) {
-    return await callClaudeAPI(context);
-  } else {
-    return generateMockResponse(context);
-  }
+  return generateMockResponse(context);
 };
 
 export const generatePostInterventionInsight = async (
@@ -32,13 +24,7 @@ export const generatePostInterventionInsight = async (
   reduction: number,
   whatHelped: string[]
 ): Promise<string> => {
-  const context = await gatherContext();
-  
-  if (USE_REAL_API) {
-    return await callClaudeAPIForInsight(interventionType, reduction, whatHelped, context);
-  } else {
-    return generateMockInsight(interventionType, reduction, whatHelped);
-  }
+  return generateMockInsight(interventionType, reduction, whatHelped);
 };
 
 // Gather user context from database
@@ -193,79 +179,5 @@ const generateMockInsight = (
   }
 };
 
-// Real Claude API call (for when you add your key)
-const callClaudeAPI = async (context: MessageContext): Promise<string> => {
-  try {
-    const prompt = `You are a compassionate behavioral health coach. Generate a brief, contextual check-in message (2-3 sentences max) based on this user context:
-
-Time: ${context.hour}:00 (${context.isLateNight ? 'late night - their danger hours' : 'daytime'})
-Recent activity: ${context.recentActivity}
-User triggers: ${context.userTriggers.join(', ')}
-Best intervention: ${context.bestIntervention} (avg ${context.avgReduction}-point reduction)
-
-Tone: Supportive, non-judgmental, specific to their pattern. No generic advice.`;
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 150,
-        messages: [{
-          role: 'user',
-          content: prompt,
-        }]
-      })
-    });
-
-    const data = await response.json();
-    return data.content[0].text;
-  } catch (error) {
-    console.error('Claude API error:', error);
-    return generateMockResponse(context); // Fallback to mock
-  }
-};
-
-const callClaudeAPIForInsight = async (
-  interventionType: string,
-  reduction: number,
-  whatHelped: string[],
-  context: MessageContext
-): Promise<string> => {
-  try {
-    const prompt = `Generate a brief, encouraging insight (1-2 sentences) about this intervention outcome:
-
-Intervention: ${interventionType}
-Urge reduction: ${reduction} points
-What helped: ${whatHelped.join(', ')}
-
-Tone: Warm, specific, focused on their progress. Not generic praise.`;
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 100,
-        messages: [{
-          role: 'user',
-          content: prompt,
-        }]
-      })
-    });
-
-    const data = await response.json();
-    return data.content[0].text;
-  } catch (error) {
-    console.error('Claude API error:', error);
-    return generateMockInsight(interventionType, reduction, whatHelped);
-  }
-};
+// Note: Real Claude API integration can be added later when needed
+// Current implementation uses local mock responses for full offline functionality
