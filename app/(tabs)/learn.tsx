@@ -106,7 +106,7 @@ export default function LearnScreen() {
                 <MaterialCommunityIcons name="shield-lock" size={24} color="#10B981" />
               </View>
               <View style={styles.headerTextContainer}>
-                <Text style={styles.cardTitle}>Your Data, Your Control</Text>
+                <Text style={styles.cardTitle}>Your Data & Privacy</Text>
                 <Text style={styles.cardSubtitle}>Privacy Guarantees</Text>
               </View>
             </View>
@@ -117,8 +117,9 @@ export default function LearnScreen() {
             
             <View style={styles.gridList}>
               <GridItem icon="database-lock" title="On-Device Only" desc="ML runs entirely on your phone." />
-              <GridItem icon="cloud-off-outline" title="No Cloud Uploads" desc="We count not see your data even if we wanted to." />
+              <GridItem icon="cloud-off-outline" title="No Cloud Uploads" desc="We cannot see your data even if we wanted to." />
               <GridItem icon="delete-outline" title="Delete Anytime" desc="Wipe all history instantly in Settings." />
+              <GridItem icon="export-variant" title="Optional Export" desc="Share anonymous data for research (opt-in only)." />
             </View>
           </LinearGradient>
         </View>
