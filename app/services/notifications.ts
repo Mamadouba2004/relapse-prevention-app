@@ -271,3 +271,34 @@ export const getScheduledNotifications = async () => {
   
   return scheduled;
 };
+
+// Schedule evening routine notifications
+export async function scheduleRoutineReminder(timeString: string = "18:00") {
+  try {
+    // Cancel previous routine reminders to avoid duplicates
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const n of scheduled) {
+      if (n.content.title === "🌙 Evening Routine") {
+        await Notifications.cancelScheduledNotificationAsync(n.identifier);
+      }
+    }
+
+    const [hour, minute] = timeString.split(':').map(Number);
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "🌙 Evening Routine",
+        body: "Time to wind down for better sleep",
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: hour,
+        minute: minute,
+      },
+    });
+    console.log(`✅ Scheduled evening routine for ${timeString}`);
+  } catch (error) {
+    console.log("Error scheduling routine reminder:", error);
+  }
+}

@@ -4,15 +4,16 @@ import { initDataCollection } from '@/app/services/dataCollection';
 import { initInterventions, shouldTriggerIntervention } from '@/app/services/interventions';
 import { calculateModelAccuracy, invalidatePredictionCache, predictUrgeRisk } from '@/app/services/mlPredictor';
 import {
-  initNotifications,
-  scheduleDangerHourNotifications
+    initNotifications,
+    scheduleDangerHourNotifications
 } from '@/app/services/notifications';
 import {
-  getNextSafeHarbor,
-  getRiskForCurrentHour as getProfileRisk,
-  initRiskProfile
+    getNextSafeHarbor,
+    getRiskForCurrentHour as getProfileRisk,
+    initRiskProfile
 } from '@/app/services/riskProfile';
 // JITAI Components
+import { RoutineCard } from '@/components/RoutineCard';
 import { AccuracyBadge } from '@/components/ui/accuracy-badge';
 import { AlertButton } from '@/components/ui/alert-button';
 import { CircleActionButton } from '@/components/ui/circle-action-button';
@@ -28,10 +29,10 @@ import * as SQLite from 'expo-sqlite';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Easing, LayoutAnimation, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, UIManager, View } from 'react-native';
 import {
-  getSafeHarborTime,
-  getRiskForCurrentHour as getScreenRisk,
-  initRiskAnalysis,
-  RiskAssessment
+    getSafeHarborTime,
+    getRiskForCurrentHour as getScreenRisk,
+    initRiskAnalysis,
+    RiskAssessment
 } from '../services/riskAnalysis';
 
 if (
@@ -97,15 +98,105 @@ export default function HomeScreen() {
   const [nextCheckInTime, setNextCheckInTime] = useState<string>('4 hours');
   const [nextCheckInLabel, setNextCheckInLabel] = useState<string>('6:00 PM');
 
+  // Routine Logic
+  const [showRoutineCard, setShowRoutineCard] = useState(false);
+  const [routineItems, setRoutineItems] = useState<string[]>([]);
+
+  const checkRoutineStatus = useCallback(async () => { 
+    if (!db) return;
+    const hour = new Date().getHours();
+    
+    // 1. Time Check (6 PM - 11 PM) + Early exit
+    const isEvening = hour >= 18 && hour <= 23;
+    if (!isEvening) {
+      console.log('Routine hidden: Not evening. Hour:', hour);
+      setShowRoutineCard(false);
+      return;
+    }
+
+    try {
+      console.log('Routine check: It is evening. Checking settings...');
+      // 2. Settings Check
+      // Use getFirstAsync logic or safely handle table existence
+      // Assume app_settings exists as SettingsScreen creates it, but fallback if not
+      try {
+        const settings = await db.getAllAsync<{ key: string, value: string }>('SELECT * FROM app_settings WHERE key IN (?, ?)', ['routine_enabled', 'routine_items']);
+        let enabled = true; // Default
+        let items = [
+            "Light exercise (20 min)",
+            "Read for 20 minutes",
+            "Journal your thoughts",
+            "Prepare tomorrow's clothes",
+            "Set phone to charge"
+        ];
+
+        settings.forEach(row => {
+            if (row.key === 'routine_enabled') enabled = row.value === 'true' || row.value === '1'; // Handle boolean stored as string/int
+            if (row.key === 'routine_items') items = JSON.parse(row.value);
+        });
+        
+        setRoutineItems(items);
+
+        if (!enabled) {
+            console.log('Routine hidden: Disabled in settings');
+            setShowRoutineCard(false);
+            return;
+        }
+      } catch (err) {
+         // app_settings might not exist yet -> proceed with defaults
+         console.log('Settings table not accessbile, using defaults');
+         setRoutineItems([
+            "Light exercise (20 min)",
+            "Read for 20 minutes",
+            "Journal your thoughts",
+            "Prepare tomorrow's clothes",
+            "Set phone to charge"
+         ]);
+      }
+
+      // 3. Completion Check
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const res = await db.getAllAsync('SELECT * FROM evening_routine WHERE completed_at >= ?', [todayStart.getTime()]);
+      console.log('Routine completion check:', res.length > 0 ? 'Completed' : 'Not Completed', res);
+      setShowRoutineCard(res.length === 0);
+
+    } catch (e) {
+      console.log("Error checking routine status:", e);
+    }
+  }, [db]);
+
+  const handleCompleteRoutine = async () => {
+    if (!db) return;
+    try {
+        await db.runAsync(
+            'INSERT INTO evening_routine (completed_at, items, fully_completed) VALUES (?, ?, ?)',
+            [Date.now(), JSON.stringify(routineItems), 1]
+        );
+        
+        setShowRoutineCard(false);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        
+        Alert.alert("Routine Complete", "Sleep well! ✅");
+        
+        // Recalculate risk immediately so the model updates
+        await loadRiskData(); 
+    } catch (e) {
+        console.error("Failed to complete routine:", e);
+    }
+  };
+
+
   useEffect(() => {
-    checkAndInitApp();
-  }, []);
+    checkRoutineStatus();
+  }, [db, checkRoutineStatus]);
   
   // Refresh risk data when tab is focused
   useFocusEffect(
     useCallback(() => {
       loadRiskData();
-    }, [db])
+      checkRoutineStatus();
+    }, [loadRiskData, checkRoutineStatus])
   );
 
   // Calculate JITAI metrics from database
@@ -610,6 +701,10 @@ export default function HomeScreen() {
     return () => pulse.stop();
   }, [isHighRisk]);
 
+  useEffect(() => {
+    checkAndInitApp();
+  }, []);
+
   return (
     <View style={styles.container}>
       {/* Animated star background */}
@@ -739,6 +834,16 @@ export default function HomeScreen() {
             )}
            </View>
         </View>
+
+        {/* Evening Routine Card */}
+        {showRoutineCard && (
+          <View style={{ paddingHorizontal: 20 }}>
+            <RoutineCard 
+              items={routineItems}
+              onComplete={handleCompleteRoutine} 
+            />
+          </View>
+        )}
 
         {/* JITAI Intervention Card - Conditional */}
         {(mlPrediction?.probability || 0) >= 0.60 && (

@@ -18,6 +18,16 @@ export const initDataCollection = async () => {
     );
   `);
 
+  // Create evening_routine table
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS evening_routine (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      completed_at INTEGER NOT NULL,
+      items TEXT,
+      fully_completed INTEGER DEFAULT 0
+    );
+  `);
+
   // Start tracking app state changes
   AppState.addEventListener('change', handleAppStateChange);
 

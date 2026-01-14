@@ -161,12 +161,13 @@ const extractFeatures = async (): Promise<PredictionFeatures> => {
   // Check if evening routine was done today
   let eveningRoutineDone = false;
   try {
-    const today = now.toISOString().split('T')[0];
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
     const routineToday = await db.getAllAsync<{ fully_completed: number }>(
-      'SELECT fully_completed FROM evening_routine WHERE date = ?',
-      [today]
+      'SELECT fully_completed FROM evening_routine WHERE completed_at >= ?',
+      [todayStart.getTime()]
     );
-    eveningRoutineDone = routineToday.length > 0 && routineToday[0].fully_completed === 1;
+    eveningRoutineDone = routineToday.length > 0;
   } catch (error) {
     // Routine table might not exist yet
     console.log('Routine table not available for ML prediction');
