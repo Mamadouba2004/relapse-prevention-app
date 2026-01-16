@@ -1,9 +1,9 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { SpaceBackground } from '@/components/ui/space-background';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { ContributionGraph } from 'react-native-chart-kit';
+import { Animated, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 interface InterventionStats {
   type: string;
@@ -12,14 +12,13 @@ interface InterventionStats {
   totalSessions: number;
 }
 
+
 interface WeeklyStats {
   weekStart: string;
   avgReduction: number;
   sessions: number;
   trend?: number;
 }
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function ProgressScreen() {
   // Animations
@@ -38,7 +37,6 @@ export default function ProgressScreen() {
   const [interventionStats, setInterventionStats] = useState<InterventionStats[]>([]);
   const [topHelpfulFactors, setTopHelpfulFactors] = useState<Array<{factor: string, count: number}>>([]);
   const [weeklyTrends, setWeeklyTrends] = useState<WeeklyStats[]>([]);
-  const [commitData, setCommitData] = useState<{ date: string; count: number }[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -110,7 +108,6 @@ export default function ProgressScreen() {
       await loadInterventionBreakdown(db);
       await loadTopHelpfulFactors(db);
       await loadWeeklyTrends(db);
-      await loadCommitHistory(db);
 
     } catch (error) {
       console.error('Error loading stats:', error);
@@ -119,19 +116,34 @@ export default function ProgressScreen() {
 
   const loadInterventionBreakdown = async (db: SQLite.SQLiteDatabase) => {
     try {
-      const query = 'SELECT intervention_type, COUNT(*) as count, AVG(reduction) as avg_reduction FROM urge_sessions WHERE intervention_type IS NOT NULL AND reduction IS NOT NULL GROUP BY intervention_type ORDER BY avg_reduction DESC';
+      const query = `
+        SELECT 
+          intervention_type, 
+          COUNT(*) as count, 
+          AVG(reduction) as avg_reduction 
+        FROM urge_sessions 
+        WHERE intervention_type IS NOT NULL 
+          AND intervention_type != '' 
+          AND LOWER(intervention_type) != 'unknown'
+          AND reduction IS NOT NULL 
+        GROUP BY intervention_type 
+        HAVING COUNT(*) > 0
+        ORDER BY avg_reduction DESC
+      `;
       const results = await db.getAllAsync<{
         intervention_type: string;
         count: number;
         avg_reduction: number;
       }>(query);
 
-      const interventionData: InterventionStats[] = results.map(r => ({
-        type: r.intervention_type,
-        count: r.count,
-        avgReduction: Math.round(r.avg_reduction || 0),
-        totalSessions: r.count,
-      }));
+      const interventionData: InterventionStats[] = results
+        .filter(r => r.intervention_type && r.intervention_type.toLowerCase() !== 'unknown')
+        .map(r => ({
+          type: r.intervention_type,
+          count: r.count,
+          avgReduction: Math.round(r.avg_reduction || 0),
+          totalSessions: r.count,
+        }));
 
       setInterventionStats(interventionData);
     } catch (error) {
@@ -204,23 +216,6 @@ export default function ProgressScreen() {
     }
   };
 
-  const loadCommitHistory = async (db: SQLite.SQLiteDatabase) => {
-    try {
-      // Get all logs (urges, lapses, safe)
-      // Group by YYYY-MM-DD
-      const query = `
-        SELECT 
-          strftime('%Y-%m-%d', datetime(timestamp/1000, 'unixepoch', 'localtime')) as date,
-          COUNT(*) as count
-        FROM logs
-        GROUP BY date
-      `;
-      const results = await db.getAllAsync<{ date: string; count: number }>(query);
-      setCommitData(results);
-    } catch (e) {
-      console.error("Error loading history", e);
-    }
-  };
 
   const getInterventionName = (type: string) => {
     switch(type) {
@@ -248,11 +243,10 @@ export default function ProgressScreen() {
     return labelMap[factor] || factor.replace(/_/g, ' ');
   };
 
-  const AnimatedCount = ({ value, suffix = '' }: { value: number, suffix?: string }) => {
+  const AnimatedCount = ({ value, suffix = '', style }: { value: number, suffix?: string, style?: any }) => {
     const [displayValue, setDisplayValue] = useState(0);
     
     useEffect(() => {
-      let start = 0;
       const duration = 1500;
       const startTime = Date.now();
       
@@ -271,24 +265,87 @@ export default function ProgressScreen() {
       requestAnimationFrame(animate);
     }, [value]);
 
-    return <Text style={styles.heroNumber}>{displayValue}{suffix}</Text>;
+    return <Text style={[styles.heroStatValue, style]}>{displayValue}{suffix}</Text>;
   };
 
-  // Podium Logic
-  const podium = [
-    interventionStats[1], // 2nd (Left)
-    interventionStats[0], // 1st (Middle)
-    interventionStats[2]  // 3rd (Right)
-  ].filter(Boolean);
+  // Podium Logic Construction
+  const podiumData = [
+    interventionStats[1] || null, // Silver (Left)
+    interventionStats[0] || null, // Gold (Center)
+    interventionStats[2] || null  // Bronze (Right)
+  ];
+
+  const getPodiumColor = (index: number): [string, string] => {
+    if (index === 0) return ['#94A3B8', '#475569']; // Silver
+    if (index === 1) return ['#FACC15', '#A16207']; // Gold
+    return ['#B45309', '#78350F']; // Bronze
+  };
+
+  const getPodiumEmoji = (index: number) => {
+    if (index === 0) return '🥈';
+    if (index === 1) return '🥇';
+    return '🥉';
+  };
+
+  const getGlassStyle = (reduction: number) => {
+    const absReduction = Math.abs(reduction);
+    if (absReduction >= 60) return {
+      colors: ['rgba(250, 204, 21, 0.15)', 'rgba(161, 98, 7, 0.08)'] as [string, string],
+      borderColor: 'rgba(250, 204, 21, 0.4)',
+      iconColor: '#FACC15'
+    };
+    if (absReduction >= 40) return {
+      colors: ['rgba(16, 185, 129, 0.15)', 'rgba(5, 150, 105, 0.08)'] as [string, string],
+      borderColor: 'rgba(16, 185, 129, 0.4)',
+      iconColor: '#10B981'
+    };
+    if (absReduction >= 20) return {
+      colors: ['rgba(59, 130, 246, 0.15)', 'rgba(37, 99, 235, 0.08)'] as [string, string],
+      borderColor: 'rgba(59, 130, 246, 0.4)',
+      iconColor: '#60A5FA'
+    };
+    return {
+      colors: ['rgba(148, 163, 184, 0.15)', 'rgba(71, 85, 105, 0.08)'] as [string, string],
+      borderColor: 'rgba(148, 163, 184, 0.4)',
+      iconColor: '#94A3B8'
+    };
+  };
+
+  const getBarGradient = (reduction: number): [string, string] => {
+    const absReduction = Math.abs(reduction);
+    if (absReduction >= 60) return ['#FACC15', '#A16207']; // Gold
+    if (absReduction >= 40) return ['#10B981', '#059669']; // Green
+    if (absReduction >= 20) return ['#3B82F6', '#2563EB']; // Blue
+    return ['#64748B', '#475569']; // Slate
+  };
+
+  const getPodiumHeight = (index: number) => {
+    if (index === 1) return 140; // Gold is tallest
+    if (index === 0) return 110; // Silver
+    return 90; // Bronze
+  };
+
+  const getInterventionIcon = (type: string): keyof typeof Ionicons.glyphMap => {
+    switch(type) {
+      case 'breathing': return 'leaf';
+      case 'urge_surfing': return 'water';
+      case 'pattern_interrupt': return 'flash';
+      case 'emergency_contact': return 'call';
+      case 'delay_distract': return 'time';
+      case 'visualize_success': return 'eye';
+      default: return 'bandage';
+    }
+  };
 
   return (
-    <ScrollView 
-      style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3B82F6" />
-      }
-      contentContainerStyle={{ paddingBottom: 40 }}
-    >
+    <SpaceBackground>
+      <ScrollView 
+        style={styles.container}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3B82F6" />
+        }
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
       <View style={styles.header}>
         <Text style={styles.title}>� Your Progress</Text>
         <Text style={styles.subtitle}>Insights from your journey</Text>
@@ -296,203 +353,242 @@ export default function ProgressScreen() {
 
       <Animated.View style={{ opacity: fadeAnim }}>
         
-        {/* HERO METRIC */}
-        {stats.totalInterventions > 0 ? (
-          <LinearGradient
-            colors={['rgba(59, 130, 246, 0.2)', 'rgba(37, 99, 235, 0.1)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.heroCard}
-          >
-            <AnimatedCount value={stats.avgReduction} suffix="%" />
-            <Text style={[styles.heroTextGlow, { position: 'absolute', top: 32, opacity: 0.3 }]}>
-              {stats.avgReduction}%
-            </Text>
-            <Text style={styles.heroLabel}>Average Urge Reduction</Text>
-            <Text style={styles.heroSubtext}>
-              Across {stats.totalInterventions} intervention sessions
-            </Text>
-          </LinearGradient>
-        ) : (
-          <LinearGradient
-            colors={['rgba(20, 184, 166, 0.15)', 'rgba(13, 148, 136, 0.05)']}
-            style={styles.heroCard}
-          >
-            <Text style={{ fontSize: 64, marginBottom: 10 }}>🌱</Text>
-            <Text style={styles.heroLabel}>Your Journey Starts Here</Text>
-            <Text style={styles.heroSubtext}>Complete your first check-in to track progress.</Text>
-          </LinearGradient>
-        )}
-
-        {/* STATS GRID */}
-        <View style={styles.statsGrid}>
-          {/* Urges Card */}
-          <LinearGradient
-            colors={['rgba(239, 68, 68, 0.15)', 'rgba(185, 28, 28, 0.05)']}
-            style={[styles.statCard, { borderColor: 'rgba(239, 68, 68, 0.3)' }]}
-          >
-            <View style={styles.statHeader}>
-              <Text style={styles.statIcon}>📝</Text>
-              <Text style={styles.statNumberSmart}>{stats.totalUrges}</Text>
-            </View>
-            <Text style={styles.statLabel}>Urges Logged</Text>
-          </LinearGradient>
-
-          {/* Interventions Card */}
-          <LinearGradient
-            colors={['rgba(251, 191, 36, 0.15)', 'rgba(217, 119, 6, 0.05)']}
-            style={[styles.statCard, { borderColor: 'rgba(251, 191, 36, 0.3)' }]}
-          >
-            <View style={styles.statHeader}>
-              <Text style={styles.statIcon}>🎯</Text>
-              <Text style={styles.statNumberSmart}>{stats.totalInterventions}</Text>
-            </View>
-            <Text style={styles.statLabel}>Interventions</Text>
-          </LinearGradient>
-
-          {/* Check-ins Card */}
-          <LinearGradient
-            colors={['rgba(20, 184, 166, 0.15)', 'rgba(13, 148, 136, 0.05)']}
-            style={[styles.statCard, { borderColor: 'rgba(20, 184, 166, 0.3)' }]}
-          >
-            <View style={styles.statHeader}>
-              <Text style={styles.statIcon}>✅</Text>
-              <Text style={styles.statNumberSmart}>{stats.totalSafeCheckins}</Text>
-            </View>
-            <Text style={styles.statLabel}>Check-ins</Text>
-          </LinearGradient>
-
-           {/* Success Rate Card */}
-           <LinearGradient
-            colors={['rgba(59, 130, 246, 0.25)', 'rgba(37, 99, 235, 0.15)']}
-            style={[styles.statCard, { borderColor: 'rgba(59, 130, 246, 0.5)', minWidth: '45%' }]}
-          >
-            <View style={styles.statHeader}>
-              <Text style={styles.statIcon}>🏆</Text>
-              <Text style={[styles.statNumberSmart, { color: '#60A5FA' }]}>{stats.successRate}%</Text>
-            </View>
-            <Text style={styles.statLabel}>Success Rate</Text>
-          </LinearGradient>
-        </View>
-
-        {/* DAILY CONSISTENCY (CONTRIBUTION GRAPH) */}
-        <View style={styles.section}>
-            <Text style={styles.sectionTitle}>📅 Daily Activity</Text>
-            <View style={{ alignItems: 'center', marginLeft: -16 }}>
-               <ContributionGraph
-                  values={commitData}
-                  endDate={new Date()}
-                  numDays={90}
-                  width={SCREEN_WIDTH - 30}
-                  height={220}
-                  chartConfig={{
-                    backgroundColor: '#1E293B',
-                    backgroundGradientFrom: '#1E293B',
-                    backgroundGradientTo: '#1E293B',
-                    decimalPlaces: 0,
-                    color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-                    labelColor: (opacity = 1) => `rgba(148, 163, 184, ${opacity})`,
-                    style: {
-                      borderRadius: 16
-                    },
-                    propsForDots: {
-                        r: "2",
-                        strokeWidth: "0"
-                    }
-                  }}
-                  tooltipDataAttrs={(value) => ({
-                      'aria-label': `${value.date}: ${value.count} entries`
-                  })}
-                />
-            </View>
-        </View>
-
-        {/* PODIUM SECTION */}
-        {interventionStats.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🎯 What Works Best for You</Text>
-            
-            {/* Podium Visual */}
-            <View style={styles.podiumContainer}>
-              {/* 2nd Place */}
-              {podium[0] && (
-                <View style={[styles.podiumColumn, { height: 120 }]}>
-                    <Text style={styles.medal}>🥈</Text>
-                    <View style={[styles.podiumBar, { height: 60, backgroundColor: 'rgba(148, 163, 184, 0.3)' }]}>
-                        <Text style={styles.podiumRank}>2nd</Text>
-                    </View>
-                     <Text style={styles.podiumLabel} numberOfLines={2}>
-                        {getInterventionName(podium[0].type)}
-                    </Text>
-                     <Text style={styles.podiumValue}>{podium[0].avgReduction}%</Text>
-                </View>
-              )}
+          {/* Stats Grid */}
+          <View style={styles.statsContainer}>
+            {/* Row 1: Success Rate - Full Width */}
+            <LinearGradient
+              colors={[
+                'rgba(59, 130, 246, 0.15)',  
+                'rgba(37, 99, 235, 0.08)'    
+              ]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.heroStatCard, {
+                borderColor: 'rgba(59, 130, 246, 0.4)',
+                borderWidth: 2,
+              }]}
+            >
+              <View style={styles.cardHeader}>
+                  <View style={[styles.iconBox, { backgroundColor: 'rgba(59, 130, 246, 0.2)' }]}>
+                    <Ionicons name="trophy" size={24} color="#60A5FA" />
+                  </View>
+                  <View style={[styles.trendBadge, { backgroundColor: 'rgba(59, 130, 246, 0.2)' }]}>
+                     <Ionicons name="trending-up" size={14} color="#60A5FA" />
+                     <Text style={{ color: '#60A5FA', fontSize: 12, fontWeight: '600', marginLeft: 4 }}>All Time</Text>
+                  </View>
+              </View>
               
-              {/* 1st Place */}
-              {podium[1] && (
-                 <View style={[styles.podiumColumn, { height: 150 }]}>
-                    <Text style={[styles.medal, { fontSize: 48 }]}>🥇</Text>
-                    <View style={[styles.podiumBar, { height: 90, backgroundColor: 'rgba(251, 191, 36, 0.3)' }]}>
-                        <Text style={[styles.podiumRank, { color: '#FCD34D' }]}>1st</Text>
-                    </View>
-                     <Text style={[styles.podiumLabel, { color: '#FCD34D', fontWeight: '800' }]} numberOfLines={2}>
-                        {getInterventionName(podium[1].type)}
-                    </Text>
-                     <Text style={[styles.podiumValue, { fontSize: 16 }]}>{podium[1].avgReduction}%</Text>
-                </View>
-              )}
+              <View>
+                <AnimatedCount 
+                  value={stats.successRate} 
+                  suffix="%" 
+                  style={styles.heroStatValue}
+                />
+                <Text style={styles.heroStatLabel}>Success Rate</Text>
+              </View>
+            </LinearGradient>
 
-              {/* 3rd Place */}
-              {podium[2] && (
-                 <View style={[styles.podiumColumn, { height: 100 }]}>
-                    <Text style={styles.medal}>🥉</Text>
-                    <View style={[styles.podiumBar, { height: 40, backgroundColor: 'rgba(180, 83, 9, 0.3)' }]}>
-                         <Text style={styles.podiumRank}>3rd</Text>
-                    </View>
-                     <Text style={styles.podiumLabel} numberOfLines={2}>
-                        {getInterventionName(podium[2].type)}
-                    </Text>
-                     <Text style={styles.podiumValue}>{podium[2].avgReduction}%</Text>
+            {/* Row 2: Interventions + Check-ins */}
+            <View style={styles.statsRow}>
+              <LinearGradient
+                colors={[
+                  'rgba(217, 119, 6, 0.15)',   
+                  'rgba(180, 83, 9, 0.08)'     
+                ]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.halfStatCard, {
+                  borderColor: 'rgba(217, 119, 6, 0.4)',
+                  borderWidth: 2,
+                }]}
+              >
+                <View style={[styles.iconBox, { backgroundColor: 'rgba(245, 158, 11, 0.2)', marginBottom: 16 }]}>
+                  <Ionicons name="shield-checkmark" size={24} color="#F59E0B" />
                 </View>
-              )}
+                <Text style={styles.statValue}>{stats.totalInterventions}</Text>
+                <Text style={styles.statLabel}>Interventions</Text>
+              </LinearGradient>
+
+              <LinearGradient
+                colors={[
+                  'rgba(20, 184, 166, 0.15)',  
+                  'rgba(13, 148, 136, 0.08)'    
+                ]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.halfStatCard, {
+                  borderColor: 'rgba(20, 184, 166, 0.4)',
+                  borderWidth: 2,
+                }]}
+              >
+                <View style={[styles.iconBox, { backgroundColor: 'rgba(20, 184, 166, 0.2)', marginBottom: 16 }]}>
+                  <Ionicons name="checkmark-circle" size={24} color="#14B8A6" />
+                </View>
+                <Text style={styles.statValue}>{stats.totalSafeCheckins}</Text>
+                <Text style={styles.statLabel}>Check-ins</Text>
+              </LinearGradient>
             </View>
 
-            {/* List View Details */}
-            <View style={{ marginTop: 20 }}>
-                <Text style={styles.subsectionTitle}>ALL INTERVENTIONS</Text>
-                {interventionStats.map((item, index) => (
-                    <View key={item.type} style={styles.listRow}>
-                        <View style={{ flex: 1 }}>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <Text style={styles.listLabel}>{getInterventionName(item.type)}</Text>
-                                 <Text style={styles.listValue}>{item.avgReduction}% avg</Text>
-                            </View>
-                            <View style={styles.progressBarBg}>
-                                <LinearGradient 
-                                    colors={index === 0 ? ['#FBBF24', '#D97706'] : ['#3B82F6', '#2563EB']}
-                                    start={{x:0, y:0}} end={{x:1, y:0}}
-                                    style={[styles.progressBarFill, { width: `${Math.min(item.avgReduction * 10, 100)}%` }]}
-                                />
-                            </View>
-                            <Text style={styles.listSubtext}>{item.count} uses • {index < 3 ? ['🥇','🥈','🥉'][index] : ''}</Text>
-                        </View>
-                    </View>
-                ))}
-            </View>
+            {/* Row 3: Urges Logged - Full Width */}
+            <LinearGradient
+              colors={[
+                'rgba(239, 68, 68, 0.15)',   
+                'rgba(185, 28, 28, 0.08)'     
+              ]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.heroStatCard, {
+                borderColor: 'rgba(239, 68, 68, 0.4)',
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingHorizontal: 24,
+                borderWidth: 2,
+              }]}
+            >
+               <View>
+                 <Text style={styles.statLabel}>Urges Logged</Text>
+                 <Text style={styles.heroStatValue}>{stats.totalUrges}</Text>
+               </View>
+               <View style={[styles.iconBox, { backgroundColor: 'rgba(239, 68, 68, 0.2)', width: 64, height: 64, borderRadius: 32 }]}>
+                 <Ionicons name="alert-circle" size={32} color="#EF4444" />
+               </View>
+            </LinearGradient>
           </View>
-        ) : (
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>🎯 What Works Best</Text>
-                <View style={styles.emptyStateMini}>
-                    <Text style={{ fontSize: 32 }}>📊</Text>
-                    <Text style={styles.emptyTextMini}>Intervention effectiveness data will appear here.</Text>
-                </View>
+
+          {/* TOP INTERVENTIONS PODIUM */}
+          {interventionStats.length > 0 && (
+            <View style={styles.sectionContainer}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                 <Text style={{ fontSize: 24, marginRight: 8 }}>🏆</Text>
+                 <View>
+                    <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Top Strategies</Text>
+                    <Text style={[styles.sectionSubtitle, { marginBottom: 0 }]}>Most effective by % reduction</Text>
+                 </View>
+              </View>
+
+              <View style={styles.podiumContainer}>
+                {podiumData.map((item, index) => {
+                  if (!item) return <View key={index} style={{ width: '30%' }} />;
+                  
+                  return (
+                    <View key={index} style={styles.podiumColumnWrapper}>
+                      {/* LABEL ABOVE */}
+                      <Text style={styles.podiumLabel} numberOfLines={1}>
+                        {getInterventionName(item.type)}
+                      </Text>
+                      <Text style={styles.podiumValue}>{Math.abs(item.avgReduction)}%</Text>
+
+                      {/* BAR */}
+                      <LinearGradient
+                        colors={getPodiumColor(index)}
+                        style={[styles.podiumBar, { height: getPodiumHeight(index), justifyContent: 'flex-end', paddingBottom: 8 }]}
+                      >
+                         <Text style={{ fontSize: 28 }}>{getPodiumEmoji(index)}</Text>
+                         <Text style={styles.podiumRank}>{index === 1 ? '1st' : index === 0 ? '2nd' : '3rd'}</Text>
+                      </LinearGradient>
+                    </View>
+                  );
+                })}
+              </View>
             </View>
-        )}
+          )}
+
+          {/* ALL INTERVENTIONS LIST */}
+          <View style={styles.sectionContainer}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                 <Text style={{ fontSize: 24, marginRight: 8 }}>📊</Text>
+                 <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Strategy Breakdown</Text>
+            </View>
+            
+            {interventionStats.map((stat, i) => {
+              const style = getGlassStyle(stat.avgReduction);
+              const absRed = Math.abs(stat.avgReduction);
+              
+              return (
+              <LinearGradient 
+                key={i} 
+                colors={style.colors} 
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.listItem, { borderColor: style.borderColor, borderWidth: 2, flexDirection: 'row', alignItems: 'center' }]}
+              >
+                  {/* Icon Box */}
+                  <View style={{ 
+                    width: 48, 
+                    height: 48, 
+                    borderRadius: 16, 
+                    backgroundColor: style.borderColor.replace('0.4', '0.1'),
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    marginRight: 16
+                  }}>
+                    <Ionicons name={getInterventionIcon(stat.type)} size={24} color={style.iconColor} />
+                  </View>
+
+                  <View style={styles.listContent}>
+                    <View style={styles.listHeader}>
+                      <Text style={styles.listTitle}>{getInterventionName(stat.type)}</Text>
+                      <Text style={[styles.listScore, { color: style.iconColor }]}>
+                        {absRed}%
+                      </Text>
+                    </View>
+                    
+                    {/* Progress Bar Background */}
+                    <View style={styles.progressBarBg}>
+                      <LinearGradient
+                        colors={[style.iconColor, style.iconColor]} 
+                        start={{ x: 0, y: 0 }} 
+                        end={{ x: 1, y: 0 }}
+                        style={[styles.progressBarFill, { width: `${Math.min(absRed, 100)}%` }]} 
+                      />
+                    </View>
+                    
+                    <Text style={styles.listSubtext}>{stat.count} sessions completed</Text>
+                  </View>
+              </LinearGradient>
+            )})}
+          </View>
+
+          {/* WEEKLY TRENDS */}
+          {weeklyTrends.length > 0 && (
+             <View style={styles.sectionContainer}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                   <Text style={{ fontSize: 24, marginRight: 8 }}>📅</Text>
+                   <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Weekly Trends</Text>
+                </View>
+                
+                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
+                  {weeklyTrends.map((week, idx) => (
+                    <LinearGradient
+                      key={idx}
+                      colors={['rgba(59, 130, 246, 0.1)', 'rgba(30, 64, 175, 0.2)']}
+                      style={styles.trendCard}
+                    >
+                      <Text style={styles.trendDate}>{week.weekStart}</Text>
+                      <Text style={styles.trendValue}>{Math.abs(week.avgReduction)}%</Text>
+                      <Text style={styles.trendSub}>Avg Reduction</Text>
+                      {week.trend !== 0 && (
+                        <View style={[styles.trendBadge, { backgroundColor: (week.trend || 0) > 0 ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)' }]}>
+                          <MaterialCommunityIcons 
+                            name={(week.trend || 0) > 0 ? "trending-up" : "trending-down"} 
+                            size={16} 
+                            color={(week.trend || 0) > 0 ? "#4ADE80" : "#F87171"} 
+                          />
+                          <Text style={{ color: (week.trend || 0) > 0 ? "#4ADE80" : "#F87171", fontSize: 12, marginLeft: 4 }}>
+                            {Math.abs(week.trend || 0)}%
+                          </Text>
+                        </View>
+                      )}
+                    </LinearGradient>
+                  ))}
+                 </ScrollView>
+             </View>
+          )}
 
         {/* WHAT HELPS MOST */}
         {topHelpfulFactors.length > 0 && (
-          <View style={styles.section}>
+          <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>✨ What Helps You Most</Text>
             {topHelpfulFactors.map((item, index) => (
                <View key={item.factor} style={styles.factorRow}>
@@ -516,31 +612,6 @@ export default function ProgressScreen() {
           </View>
         )}
 
-        {/* WEEKLY TRENDS */}
-        {weeklyTrends.length > 0 && (
-             <View style={styles.section}>
-                <Text style={styles.sectionTitle}>� Your Progress Over Time</Text>
-                {weeklyTrends.map((week, index) => (
-                    <View key={index} style={styles.weekRow}>
-                        <Text style={styles.weekLabel}>{week.weekStart}</Text>
-                        <View style={styles.weekBarContainer}>
-                            <LinearGradient
-                                colors={['#3B82F6', '#14B8A6']}
-                                start={{x: 0, y: 0}} end={{x: 1, y: 0}}
-                                style={[styles.weekBarFill, { width: `${Math.min(week.avgReduction * 10, 100)}%` }]} 
-                            />
-                        </View>
-                        <Text style={styles.weekValue}>{week.avgReduction}%</Text>
-                        {!!week.trend && week.trend !== 0 && (
-                             <Text style={[styles.trendArrow, { color: week.trend > 0 ? '#10B981' : '#EF4444' }]}>
-                                 {week.trend > 0 ? '↑' : '↓'} {Math.abs(week.trend)}%
-                             </Text>
-                        )}
-                    </View>
-                ))}
-             </View>
-        )}
-
         {/* MINDSET MESSAGE */}
         <LinearGradient
             colors={['rgba(139, 92, 246, 0.15)', 'rgba(109, 40, 217, 0.05)']}
@@ -553,7 +624,7 @@ export default function ProgressScreen() {
                  <View style={{ flex: 1 }}>
                      <Text style={styles.mindsetTitle}>Progress Over Perfection</Text>
                      <Text style={styles.mindsetText}>
-                        Recovery isn't linear. Every intervention you complete builds resilience. 
+                        Recovery isn&apos;t linear. Every intervention you complete builds resilience. 
                         Every urge you log is data that helps you understand your patterns.
                      </Text>
                  </View>
@@ -561,212 +632,238 @@ export default function ProgressScreen() {
         </LinearGradient>
 
       </Animated.View>
-    </ScrollView>
+      </ScrollView>
+    </SpaceBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F172A',
-    paddingHorizontal: 20,
   },
   header: {
-    marginTop: 60,
-    marginBottom: 24,
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    marginBottom: 20,
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '800',
-    color: '#F8FAFC',
+    color: '#FFFFFF',
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 16,
     color: '#94A3B8',
   },
-  
-  // HERO
-  heroCard: {
-    padding: 32,
-    borderRadius: 24,
-    borderWidth: 2,
-    borderColor: 'rgba(59, 130, 246, 0.4)',
-    alignItems: 'center',
-    marginBottom: 24,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.25,
-    shadowRadius: 40,
-    elevation: 8,
-    position: 'relative',
-    overflow: 'hidden',
+  // Cards
+  statsContainer: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    gap: 16,
   },
-  heroNumber: {
-    fontSize: 96,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    textShadowColor: 'rgba(59, 130, 246, 0.6)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 30,
-    lineHeight: 100,
-  },
-  heroTextGlow: {
-    fontSize: 96,
-    fontWeight: '800',
-    color: '#3B82F6',
-    position: 'absolute',
-    top: 32,
-  },
-  heroLabel: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#E2E8F0',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  heroSubtext: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.6)',
-    textAlign: 'center',
-  },
-
-  // STATS GRID
-  statsGrid: {
+  statsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 32,
+    gap: 16,
   },
-  statCard: {
-    width: '48%', // Approx half
-    padding: 20,
+  heroStatCard: {
+    width: '100%',
+    borderRadius: 20,
+    padding: 24,
+    minHeight: 140,
+    position: 'relative',
+  },
+  halfStatCard: {
+    flex: 1,
     borderRadius: 16,
-    borderWidth: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 4,
+    padding: 20,
+    minHeight: 140,
   },
-  statHeader: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 16,
+  },
+  trendBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  iconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Deprecated usage kept for now, but not used
+  iconCircle: {
+      position: 'absolute',
+      top: 20,
+      right: 20,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: 'rgba(59, 130, 246, 0.2)',
+      alignItems: 'center',
+      justifyContent: 'center',
   },
   statIcon: {
-    fontSize: 24, 
+      fontSize: 32,
+      marginBottom: 8,
   },
-  statNumberSmart: {
-    fontSize: 28,
+  heroStatValue: {
+    fontSize: 56,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  heroStatLabel: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  statValue: {
+    fontSize: 40,
     fontWeight: '700',
-    color: '#F1F5F9',
+    color: '#fff',
+    marginBottom: 4,
   },
   statLabel: {
-    fontSize: 14,
-    color: '#94A3B8',
-    fontWeight: '600',
+    fontSize: 13,
+    color: '#9CA3AF',
+    fontWeight: '500', 
   },
-
-  // SECTIONS
-  section: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#334155',
+  sectionContainer: {
+    marginTop: 32,
+    paddingHorizontal: 20,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#F8FAFC',
-    marginBottom: 20,
+    color: '#FFFFFF',
+    marginBottom: 4,
   },
-  subsectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#64748B',
-    letterSpacing: 1,
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#94A3B8',
+    marginBottom: 16,
+  },
+  listItem: {
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
-  
-  // PODIUM
+  listContent: {
+    flex: 1,
+  },
+  listHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  listTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#F8FAFC',
+  },
+  listScore: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  progressBarBg: {
+    height: 6,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 3,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  listSubtext: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  // Podium Styles
   podiumContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
     justifyContent: 'center',
-    height: 180,
-    marginBottom: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-    paddingBottom: 20,
+    alignItems: 'flex-end',
+    height: 200,
+    marginBottom: 20,
   },
-  podiumColumn: {
+  podiumColumnWrapper: {
     alignItems: 'center',
-    justifyContent: 'flex-end',
     width: '30%',
     marginHorizontal: 4,
-  },
-  medal: {
-    fontSize: 32,
-    marginBottom: 8,
   },
   podiumBar: {
     width: '100%',
     borderTopLeftRadius: 8,
     borderTopRightRadius: 8,
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  podiumRank: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#E2E8F0',
+    justifyContent: 'flex-start',
+    paddingTop: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   podiumLabel: {
     fontSize: 12,
-    color: '#CBD5E1',
-    textAlign: 'center',
     fontWeight: '600',
-    marginBottom: 2,
+    color: '#E2E8F0',
+    marginBottom: 4,
+    textAlign: 'center',
   },
   podiumValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  podiumRank: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  // Weekly Trend
+  trendCard: {
+    width: 120,
+    padding: 16,
+    borderRadius: 16,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+  },
+  trendDate: {
     fontSize: 12,
     color: '#94A3B8',
+    marginBottom: 8,
   },
-
-  // LIST ROWS
-  listRow: {
-      marginBottom: 16,
+  trendValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 2,
   },
-  listLabel: {
-      color: '#E2E8F0',
-      fontWeight: '600',
-      fontSize: 15,
+  trendSub: {
+    fontSize: 10,
+    color: '#64748B',
+    marginBottom: 8,
   },
-  listValue: {
-      color: '#94A3B8',
-      fontSize: 14,
-  },
-  listSubtext: {
-      fontSize: 12,
-      color: '#64748B',
-      marginTop: 4,
-  },
-  progressBarBg: {
-      height: 8,
-      backgroundColor: 'rgba(255,255,255,0.05)',
-      borderRadius: 4,
-      overflow: 'hidden',
-  },
-  progressBarFill: {
-      height: '100%',
-      borderRadius: 4,
-  },
-
   // FACTORS
   factorRow: {
       flexDirection: 'row',
@@ -791,45 +888,7 @@ const styles = StyleSheet.create({
       fontSize: 15,
       fontWeight: '500',
   },
-
-  // WEEKLY
-  weekRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 16,
-  },
-  weekLabel: {
-      width: 80,
-      color: '#94A3B8',
-      fontSize: 13,
-  },
-  weekBarContainer: {
-      flex: 1,
-      height: 12,
-      backgroundColor: 'rgba(255,255,255,0.05)',
-      borderRadius: 6,
-      marginHorizontal: 12,
-      overflow: 'hidden',
-  },
-  weekBarFill: {
-      height: '100%',
-      borderRadius: 6,
-  },
-  weekValue: {
-      width: 40,
-      color: '#E2E8F0',
-      fontWeight: '700',
-      fontSize: 14,
-      textAlign: 'right',
-  },
-  trendArrow: {
-      width: 50,
-      fontSize: 12,
-      fontWeight: '600',
-      textAlign: 'right',
-  },
-
-  // MINDSET
+    // MINDSET
   mindsetCard: {
       padding: 24,
       borderRadius: 20,
@@ -856,17 +915,5 @@ const styles = StyleSheet.create({
       color: '#94A3B8',
       lineHeight: 22,
       fontSize: 14,
-  },
-
-  // EMPTY STATES
-  emptyStateMini: {
-      alignItems: 'center',
-      padding: 20,
-      opacity: 0.7,
-  },
-  emptyTextMini: {
-      color: '#64748B',
-      marginTop: 8,
-      textAlign: 'center',
   },
 });
