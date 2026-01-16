@@ -4,13 +4,13 @@ import { initDataCollection } from '@/app/services/dataCollection';
 import { initInterventions, shouldTriggerIntervention } from '@/app/services/interventions';
 import { calculateModelAccuracy, invalidatePredictionCache, predictUrgeRisk } from '@/app/services/mlPredictor';
 import {
-    initNotifications,
-    scheduleDangerHourNotifications
+  initNotifications,
+  scheduleDangerHourNotifications
 } from '@/app/services/notifications';
 import {
-    getNextSafeHarbor,
-    getRiskForCurrentHour as getProfileRisk,
-    initRiskProfile
+  getNextSafeHarbor,
+  getRiskForCurrentHour as getProfileRisk,
+  initRiskProfile
 } from '@/app/services/riskProfile';
 // JITAI Components
 import { RoutineCard } from '@/components/RoutineCard';
@@ -29,10 +29,10 @@ import * as SQLite from 'expo-sqlite';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Easing, LayoutAnimation, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, UIManager, View } from 'react-native';
 import {
-    getSafeHarborTime,
-    getRiskForCurrentHour as getScreenRisk,
-    initRiskAnalysis,
-    RiskAssessment
+  getSafeHarborTime,
+  getRiskForCurrentHour as getScreenRisk,
+  initRiskAnalysis,
+  RiskAssessment
 } from '../services/riskAnalysis';
 
 if (
@@ -56,6 +56,7 @@ const formatTimeAgo = (timestamp: number) => {
 export default function HomeScreen() {
   const router = useRouter();
   const [db, setDb] = useState<SQLite.SQLiteDatabase | null>(null);
+  const [isDbReady, setIsDbReady] = useState(false);
   const [risk, setRisk] = useState<RiskAssessment | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showIntervention, setShowIntervention] = useState(false);
@@ -102,8 +103,8 @@ export default function HomeScreen() {
   const [showRoutineCard, setShowRoutineCard] = useState(false);
   const [routineItems, setRoutineItems] = useState<string[]>([]);
 
-  const checkRoutineStatus = useCallback(async () => { 
-    if (!db) return;
+  const checkRoutineStatus = useCallback(async () => {
+    if (!isDbReady || !db) return;
     const hour = new Date().getHours();
     
     // 1. Time Check (6 PM - 11 PM) + Early exit
@@ -166,41 +167,13 @@ export default function HomeScreen() {
     }
   }, [db]);
 
-  const handleCompleteRoutine = async () => {
-    if (!db) return;
-    try {
-        await db.runAsync(
-            'INSERT INTO evening_routine (completed_at, items, fully_completed) VALUES (?, ?, ?)',
-            [Date.now(), JSON.stringify(routineItems), 1]
-        );
-        
-        setShowRoutineCard(false);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        
-        Alert.alert("Routine Complete", "Sleep well! ✅");
-        
-        // Recalculate risk immediately so the model updates
-        await loadRiskData(); 
-    } catch (e) {
-        console.error("Failed to complete routine:", e);
-    }
-  };
-
-
   useEffect(() => {
     checkRoutineStatus();
-  }, [db, checkRoutineStatus]);
-  
-  // Refresh risk data when tab is focused
-  useFocusEffect(
-    useCallback(() => {
-      loadRiskData();
-      checkRoutineStatus();
-    }, [loadRiskData, checkRoutineStatus])
-  );
+  }, [isDbReady, checkRoutineStatus]);
+
 
   // Calculate JITAI metrics from database
-  const calculateJITAIMetrics = async (currentRisk?: number) => {
+  const calculateJITAIMetrics = useCallback(async (currentRisk?: number) => {
     if (!db) return;
     
     // Use the provided risk or fallback to state (careful of stale state!)
@@ -263,10 +236,10 @@ export default function HomeScreen() {
     } catch (error) {
       console.log('Error calculating JITAI metrics:', error);
     }
-  };
+  }, [db, liveRiskScore, mlPrediction]);
 
   // Calculate Trend: Compare current score to ~1 hour ago
-  const updateRiskTrend = async (currentScore: number) => {
+  const updateRiskTrend = useCallback(async (currentScore: number) => {
     if (!db) return;
     
     // 1. Save current snapshot
@@ -301,7 +274,7 @@ export default function HomeScreen() {
         // No history yet? No trend.
         setTrendData(null);
     }
-  };
+  }, [db]);
 
   const checkAndInitApp = async () => {
     const database = await SQLite.openDatabaseAsync('behavior.db');
@@ -336,54 +309,74 @@ export default function HomeScreen() {
   };
 
   const initApp = async (database: SQLite.SQLiteDatabase) => {
-    await database.execAsync(`
-      CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL,
-        timestamp INTEGER NOT NULL
-      );
-    `);
-
-    // Create check_ins table for rich metadata
-    await database.execAsync(`
-      CREATE TABLE IF NOT EXISTS check_ins (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp INTEGER NOT NULL,
-        feeling TEXT NOT NULL, -- 'good' | 'struggling'
-        stress_level INTEGER DEFAULT 0,
-        loneliness_level INTEGER DEFAULT 0
-      );
-    `);
-
-    // Create risk_history table for trend analysis
-    await database.execAsync(`
-      CREATE TABLE IF NOT EXISTS risk_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        score INTEGER NOT NULL,
-        timestamp INTEGER NOT NULL
-      );
-    `);
-
-    // Create urge_sessions table if not exists, with all columns
     try {
-      await database.execAsync(`
-        CREATE TABLE IF NOT EXISTS urge_sessions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          start_timestamp INTEGER NOT NULL,
-          intensity_before INTEGER,
-          intensity_after INTEGER,
-          intervention_type TEXT,
-          reduction INTEGER,
-          what_helped TEXT,
-          created_at INTEGER
+        await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT NOT NULL,
+            timestamp INTEGER NOT NULL
         );
-      `);
-      
-      // Try to add what_helped column if it doesn't exist (for existing tables)
-      await database.execAsync(`ALTER TABLE urge_sessions ADD COLUMN what_helped TEXT`);
+        CREATE TABLE IF NOT EXISTS check_ins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp INTEGER NOT NULL,
+            feeling TEXT NOT NULL,
+            stress_level INTEGER DEFAULT 0,
+            loneliness_level INTEGER DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS risk_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            score INTEGER NOT NULL,
+            timestamp INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS urge_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            start_timestamp INTEGER NOT NULL,
+            intensity_before INTEGER,
+            intensity_after INTEGER,
+            intervention_type TEXT,
+            reduction INTEGER,
+            what_helped TEXT,
+            created_at INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS user_profile (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            start_date TEXT,
+            reasons TEXT,
+            goals TEXT
+        );
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL, 
+            timestamp INTEGER NOT NULL,
+            metadata TEXT 
+        );
+        CREATE TABLE IF NOT EXISTS evening_routine (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            completed_at INTEGER NOT NULL,
+            items TEXT,
+            fully_completed INTEGER DEFAULT 0
+        );
+        `);
+
+        // Migration for evening_routine to ensure completed_at exists
+        try {
+            const hasCol = await database.getAllAsync<{name: string}>("PRAGMA table_info(evening_routine)");
+            const hasCompletedAt = hasCol.some((col) => col.name === 'completed_at');
+            if (!hasCompletedAt) {
+                 await database.execAsync('DROP TABLE IF EXISTS evening_routine');
+                 await database.execAsync(`CREATE TABLE IF NOT EXISTS evening_routine (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    completed_at INTEGER NOT NULL,
+                    items TEXT,
+                    fully_completed INTEGER DEFAULT 0
+                );`);
+            }
+        } catch (e) { console.log('Migration check skipped', e); }
+
+        setIsDbReady(true);
     } catch (error) {
-      // Column already exists or table created fresh - that's fine
-      console.log('urge_sessions table ready');
+        console.error("Failed to init tables", error);
     }
 
     await initDataCollection();
@@ -410,7 +403,8 @@ export default function HomeScreen() {
     return () => clearInterval(interval);
   };
 
-  const loadRiskData = async () => {
+  const loadRiskData = useCallback(async () => {
+    if (!isDbReady) return; // Wait for DB
     try {
       await initRiskProfile();
       await initRiskAnalysis();
@@ -469,7 +463,7 @@ export default function HomeScreen() {
     } catch (error) {
       console.error('Error loading risk data:', error);
     }
-  };
+  }, [isDbReady, updateRiskTrend, calculateJITAIMetrics]);
 
   const handleCheckIn = async (status: 'good' | 'struggling') => {
     if (!db) return;
@@ -570,14 +564,7 @@ export default function HomeScreen() {
     return `${hour - 12} PM`;
   };
 
-  // Get gradient colors based on risk level (Weather metaphor)
-  // Now uses liveRiskScore from database!
-  const getRiskGradient = (): readonly [string, string, ...string[]] => {
-    const percentage = liveRiskScore;
-    if (percentage > 60) return ['#8b0000', '#191919'] as const; // STORM WARNING - deep red
-    if (percentage > 30) return ['#B8860B', '#191919'] as const; // CAUTION - dark goldenrod
-    return ['#1e5128', '#191919'] as const; // CLEAR - deep green
-  };
+
 
   // Get weather icon based on risk level
   const getWeatherIcon = (): keyof typeof MaterialCommunityIcons.glyphMap => {
@@ -652,21 +639,33 @@ export default function HomeScreen() {
     );
   };
 
-  // ONBOARDING COMPONENT
-  if (showOnboarding) {
-    return <OnboardingFlow 
-      onComplete={async () => {
-        if (!db) return;
+  const handleCompleteRoutine = async () => {
+    if (!db) return;
+    try {
         await db.runAsync(
-          'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
-          ['onboarding_complete', 'true']
+            'INSERT INTO evening_routine (completed_at, items, fully_completed) VALUES (?, ?, ?)',
+            [Date.now(), JSON.stringify(routineItems), 1]
         );
-        setShowOnboarding(false);
-        await initApp(db);
-      }} 
-      db={db}
-    />;
-  }
+        
+        setShowRoutineCard(false);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        
+        Alert.alert("Routine Complete", "Sleep well! ✅");
+        
+        // Recalculate risk immediately so the model updates
+        await loadRiskData(); 
+    } catch (e) {
+        console.error("Failed to complete routine:", e);
+    }
+  };
+  
+  // Refresh risk data when tab is focused
+  useFocusEffect(
+    useCallback(() => {
+      loadRiskData();
+      checkRoutineStatus();
+    }, [loadRiskData, checkRoutineStatus])
+  );
 
   // Now using live database risk score!
   const isHighRisk = liveRiskScore > 60;
@@ -704,6 +703,24 @@ export default function HomeScreen() {
   useEffect(() => {
     checkAndInitApp();
   }, []);
+
+  // ONBOARDING COMPONENT
+  if (showOnboarding) {
+    return <OnboardingFlow 
+      onComplete={async () => {
+        if (!db) return;
+        await db.runAsync(
+          'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
+          ['onboarding_complete', 'true']
+        );
+        setShowOnboarding(false);
+        await initApp(db);
+      }} 
+      db={db}
+    />;
+  }
+
+
 
   return (
     <View style={styles.container}>
