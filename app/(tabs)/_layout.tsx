@@ -78,20 +78,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="progress"
+        options={{
+          title: 'Progress',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={22} name="chart.line.uptrend.xyaxis" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="learn"
         options={{
           title: 'Learn',
           tabBarIcon: ({ color, focused }) => (
             <IconSymbol name={focused ? 'book.fill' : 'book'} color={color} size={focused ? 24 : 22} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="analytics"
-        options={{
-          title: 'Privacy',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={22} name="lock.fill" color={color} />
           ),
         }}
       />
