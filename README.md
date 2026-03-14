@@ -2,9 +2,19 @@
 
 **A Just-In-Time Adaptive Intervention (JITAI) system for behavioral health**
 
+[![Deploy to GitHub Pages](https://github.com/Mamadouba2004/relapse-prevention-app/actions/workflows/deploy.yml/badge.svg)](https://github.com/Mamadouba2004/relapse-prevention-app/actions/workflows/deploy.yml)
 ![Status](https://img.shields.io/badge/status-active-success.svg)
-![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-blue.svg)
+![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android%20%7C%20Web-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
+---
+
+## 🌐 Live Demo
+
+**[→ Try Interruption in your browser](https://mamadouba2004.github.io/relapse-prevention-app/)**
+
+> The web version is automatically built and deployed from the `main` branch via GitHub Actions.  
+> For the full native experience (haptics, push notifications, local data persistence), run the app on iOS or Android.
 
 ---
 
@@ -145,8 +155,8 @@ Built on principles from:
 ### Installation
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/interruption.git
-cd interruption
+git clone https://github.com/Mamadouba2004/relapse-prevention-app.git
+cd relapse-prevention-app
 
 # Install dependencies
 npm install
@@ -159,7 +169,41 @@ npm run ios
 
 # Run on Android
 npm run android
+
+# Run in browser
+npm run web
 ```
+
+---
+
+## 🚢 Deployment
+
+### Web — GitHub Pages (automatic)
+
+Every push to `main` triggers the [GitHub Actions workflow](.github/workflows/deploy.yml), which:
+1. Exports a static build with `expo export --platform web`
+2. Deploys it to **[GitHub Pages](https://mamadouba2004.github.io/relapse-prevention-app/)**
+
+### Mobile — EAS Build
+
+```bash
+# Install EAS CLI
+npm install -g eas-cli
+
+# Log in to your Expo account
+eas login
+
+# Build for iOS (TestFlight / App Store)
+eas build --platform ios --profile production
+
+# Build for Android (Play Store)
+eas build --platform android --profile production
+
+# Internal preview APK
+eas build --platform android --profile preview
+```
+
+> `eas.json` in the repo root contains the build profiles (development, preview, production).
 
 ---
 
