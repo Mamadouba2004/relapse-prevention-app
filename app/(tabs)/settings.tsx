@@ -67,9 +67,10 @@ export default function SettingsScreen() {
   }, []);
 
   const initSettings = async () => {
+    if (Platform.OS === 'web') return; // Use default settings on web
     const database = await SQLite.openDatabaseAsync('behavior.db');
     setDb(database);
-    
+
     // Create or update app_settings table
     await database.execAsync(`
       CREATE TABLE IF NOT EXISTS app_settings (
@@ -81,7 +82,7 @@ export default function SettingsScreen() {
     // Load saved settings
     const result = await database.getAllAsync<{ key: string, value: string }>('SELECT * FROM app_settings');
     const loadedSettings: any = { ...settings };
-    
+
     result.forEach(row => {
       try {
         // Parse boolean/array values, keep strings as strings
@@ -96,6 +97,10 @@ export default function SettingsScreen() {
   };
 
   const saveSetting = async (key: keyof SettingsState, value: any) => {
+    if (Platform.OS === 'web') {
+      setSettings(prev => ({ ...prev, [key]: value }));
+      return;
+    }
     if (!db) return;
     
     const newSettings = { ...settings, [key]: value };
@@ -128,6 +133,10 @@ export default function SettingsScreen() {
   };
 
   const exportData = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Export', 'Data export is not available in the web demo.');
+      return;
+    }
     if (!db) return;
     try {
       // Collect anonymous data
@@ -155,6 +164,10 @@ export default function SettingsScreen() {
   };
 
   const clearPredictionHistory = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Web Demo', 'History clearing is not available in the web demo.');
+      return;
+    }
     if (!db) return;
     
     Alert.alert(
@@ -177,6 +190,11 @@ export default function SettingsScreen() {
   };
 
   const deleteAllData = async () => {
+    if (Platform.OS === 'web') {
+      setShowDeleteModal(false);
+      Alert.alert('Web Demo', 'Data deletion is not available in the web demo.');
+      return;
+    }
     if (!db) return;
     if (deleteConfirmation !== 'DELETE') return;
 
@@ -488,8 +506,8 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Time Picker */}
-      {showTimePicker.show && (
+      {/* Time Picker — native only */}
+      {showTimePicker.show && Platform.OS !== 'web' && (
           <DateTimePicker
             value={new Date()}
             mode="time"

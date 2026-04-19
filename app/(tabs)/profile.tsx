@@ -4,9 +4,14 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import {
+  WEB_MOCK_PEAK_WINDOW,
+  WEB_MOCK_PROFILE_DATA,
+  WEB_MOCK_WEEKLY_WINS,
+} from '../services/mockData';
 import {
   calculate24HourProfile,
   formatHour,
@@ -42,6 +47,13 @@ export default function ProfileScreen() {
   }, []);
 
   const loadProfile = async () => {
+    if (Platform.OS === 'web') {
+      setProfileData(WEB_MOCK_PROFILE_DATA);
+      setPeakWindow(WEB_MOCK_PEAK_WINDOW);
+      const best = { start: 8, end: 12, avgRisk: 22 };
+      setLowestRiskWindow(best);
+      return;
+    }
     await initRiskProfile();
     const profile = await calculate24HourProfile();
     const peak = await getPeakDangerWindow();
@@ -69,6 +81,10 @@ export default function ProfileScreen() {
   
   // Load count of "I'm Safe" taps during high-risk (Red Zone) hours this week
   const loadWeeklyWins = async () => {
+    if (Platform.OS === 'web') {
+      setWeeklyWins(WEB_MOCK_WEEKLY_WINS);
+      return;
+    }
     try {
       const db = await SQLite.openDatabaseAsync('behavior.db');
       const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);

@@ -23,7 +23,7 @@ export default function TabLayout() {
           left: 20,
           right: 20,
           height: 64,
-          backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#0F172A', // Glass on iOS, Solid on Android (BlurView experimental on Android)
+          backgroundColor: Platform.OS === 'ios' ? 'transparent' : 'rgba(15, 23, 42, 0.95)',
           borderRadius: 32,
           borderTopWidth: 0,
           shadowColor: '#000',
@@ -40,7 +40,7 @@ export default function TabLayout() {
           height: 56,
           paddingVertical: 8,
         },
-        tabBarBackground: () => (
+        tabBarBackground: () =>
           Platform.OS === 'ios' ? (
             <BlurView
               intensity={40}
@@ -49,11 +49,10 @@ export default function TabLayout() {
                 ...StyleSheet.absoluteFillObject,
                 borderRadius: 32,
                 overflow: 'hidden',
-                backgroundColor: 'rgba(15, 23, 42, 0.5)', // Semi-transparent fallback/tint
+                backgroundColor: 'rgba(15, 23, 42, 0.5)',
               }}
             />
-          ) : null
-        ),
+          ) : null,
       }}>
       <Tabs.Screen
         name="index"

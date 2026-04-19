@@ -3,7 +3,13 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  WEB_MOCK_INTERVENTION_STATS,
+  WEB_MOCK_STATS,
+  WEB_MOCK_TOP_FACTORS,
+  WEB_MOCK_WEEKLY_TRENDS,
+} from '../services/mockData';
 
 interface InterventionStats {
   type: string;
@@ -64,6 +70,13 @@ export default function ProgressScreen() {
   };
 
   const loadAllStats = async () => {
+    if (Platform.OS === 'web') {
+      setStats(WEB_MOCK_STATS);
+      setInterventionStats(WEB_MOCK_INTERVENTION_STATS);
+      setTopHelpfulFactors(WEB_MOCK_TOP_FACTORS);
+      setWeeklyTrends(WEB_MOCK_WEEKLY_TRENDS);
+      return;
+    }
     const db = await SQLite.openDatabaseAsync('behavior.db');
 
     try {

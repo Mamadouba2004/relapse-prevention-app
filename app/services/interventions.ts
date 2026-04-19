@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
 
 export type InterventionType = 'breathing' | 'urge_surfing' | 'pattern_interrupt' | 'emergency_contact';
 
@@ -15,6 +16,7 @@ export interface Intervention {
 let db: SQLite.SQLiteDatabase | null = null;
 
 export const initInterventions = async () => {
+  if (Platform.OS === 'web') return;
   db = await SQLite.openDatabaseAsync('behavior.db');
 
   await db.execAsync(`
@@ -97,6 +99,7 @@ export const getAvailableInterventions = (): Intervention[] => {
 
 // Check if intervention should trigger
 export const shouldTriggerIntervention = async (currentRisk: number): Promise<boolean> => {
+  if (Platform.OS === 'web') return false;
   if (currentRisk < 70) return false;
 
   if (!db) return true;

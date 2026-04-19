@@ -1,24 +1,24 @@
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import * as SQLite from 'expo-sqlite';
+import { Alert, Platform } from 'react-native';
 import { generateContextualNotification } from './llmService';
 
-// Set notification handler (how notifications appear)
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: false,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
-
-import { Alert } from 'react-native';
-
-// ... imports ...
+// Set notification handler (how notifications appear) — native only
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: false,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 export const initNotifications = async () => {
+  if (Platform.OS === 'web') return false;
   if (!Device.isDevice) {
     console.log('Notifications only work on physical devices');
     return false;
@@ -52,6 +52,7 @@ export const initNotifications = async () => {
 
 // Schedule notifications based on user's danger hours
 export const scheduleDangerHourNotifications = async () => {
+  if (Platform.OS === 'web') return;
   const db = await SQLite.openDatabaseAsync('behavior.db');
 
   try {
@@ -176,6 +177,7 @@ const scheduleWindowNotification = async (window: string) => {
 
 // Schedule extra support after lapse (every 2 hours for 48 hours)
 export const schedulePostLapseSupport = async () => {
+  if (Platform.OS === 'web') return;
   const db = await SQLite.openDatabaseAsync('behavior.db');
 
   try {
@@ -229,6 +231,7 @@ export const schedulePostLapseSupport = async () => {
 
 // Manual test notification
 export const sendTestNotification = async () => {
+  if (Platform.OS === 'web') return;
   await Notifications.scheduleNotificationAsync({
     content: {
       title: 'Interruption',
@@ -274,6 +277,7 @@ export const getScheduledNotifications = async () => {
 
 // Schedule evening routine notifications
 export async function scheduleRoutineReminder(timeString: string = "18:00") {
+  if (Platform.OS === 'web') return;
   try {
     // Cancel previous routine reminders to avoid duplicates
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
