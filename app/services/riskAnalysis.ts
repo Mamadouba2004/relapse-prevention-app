@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
 import { calculate24HourProfile, getPeakDangerWindow } from './riskProfile';
 
 export interface HourlyPattern {
@@ -19,6 +20,7 @@ export interface RiskAssessment {
 let db: SQLite.SQLiteDatabase | null = null;
 
 export const initRiskAnalysis = async () => {
+  if (Platform.OS === 'web') return;
   db = await SQLite.openDatabaseAsync('behavior.db');
 };
 
@@ -52,6 +54,7 @@ export const getHourlyPattern = async (): Promise<HourlyPattern[]> => {
 
 // Get risk score for current hour based on screen_on events over last 7 days
 export const getRiskForCurrentHour = async (): Promise<number> => {
+  if (Platform.OS === 'web') return 67;
   if (!db) {
     await initRiskAnalysis();
   }
@@ -156,6 +159,7 @@ export const getSafeHarborTime = async (): Promise<{
   safeHour: number;
   safeHourLabel: string;
 } | null> => {
+  if (Platform.OS === 'web') return { timeRemaining: '4h30m', safeHour: 8, safeHourLabel: '8 AM' };
   if (!db) {
     await initRiskAnalysis();
   }

@@ -1,4 +1,6 @@
 import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
+import { WEB_MOCK_ML_PREDICTION, WEB_MOCK_MODEL_ACCURACY } from './mockData';
 
 // Simple logistic regression model (trained on your data)
 // Features: hour, day_of_week, screen_unlocks_last_hour, time_since_last_urge, evening_routine_done
@@ -61,6 +63,7 @@ const MODEL_WEIGHTS = {
 };
 
 export const predictUrgeRisk = async (): Promise<PredictionResult> => {
+  if (Platform.OS === 'web') return WEB_MOCK_ML_PREDICTION;
   const features = await extractFeatures();
   
   // Check cache (valid for 5 mins provided inputs haven't changed)
@@ -406,6 +409,7 @@ export const recommendIntervention = async (): Promise<{
 
 // Calculate model accuracy based on historical predictions vs outcomes
 export const calculateModelAccuracy = async (): Promise<number> => {
+  if (Platform.OS === 'web') return WEB_MOCK_MODEL_ACCURACY;
   const db = await SQLite.openDatabaseAsync('behavior.db');
   const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
   

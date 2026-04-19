@@ -1,10 +1,11 @@
 import * as SQLite from 'expo-sqlite';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 
 let db: SQLite.SQLiteDatabase | null = null;
 let lastAppState: AppStateStatus = 'active';
 
 export const initDataCollection = async () => {
+  if (Platform.OS === 'web') return;
   // Open database
   db = await SQLite.openDatabaseAsync('behavior.db');
 

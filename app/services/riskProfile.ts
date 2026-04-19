@@ -1,4 +1,10 @@
 import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
+import {
+  WEB_MOCK_PEAK_WINDOW,
+  WEB_MOCK_PROFILE_DATA,
+  WEB_MOCK_SAFE_HARBOR,
+} from './mockData';
 
 export interface HourlyRiskProfile {
   hour: number;
@@ -10,6 +16,7 @@ export interface HourlyRiskProfile {
 let db: SQLite.SQLiteDatabase | null = null;
 
 export const initRiskProfile = async () => {
+  if (Platform.OS === 'web') return;
   db = await SQLite.openDatabaseAsync('behavior.db');
 };
 
@@ -70,6 +77,7 @@ const getUserProfile = async () => {
 
 // Calculate 24-hour risk profile based on user's answers
 export const calculate24HourProfile = async (): Promise<HourlyRiskProfile[]> => {
+  if (Platform.OS === 'web') return WEB_MOCK_PROFILE_DATA;
   const profile = await getUserProfile();
   
   if (!profile) {
@@ -181,6 +189,7 @@ export const getPeakDangerWindow = async (): Promise<{
   avgRisk: number;
   triggers: string[];
 }> => {
+  if (Platform.OS === 'web') return WEB_MOCK_PEAK_WINDOW;
   const profile = await calculate24HourProfile();
   const userProfile = await getUserProfile();
   
@@ -226,6 +235,7 @@ const formatHour = (hour: number): string => {
 
 // Get live risk score for current hour based on actual database data
 export const getRiskForCurrentHour = async (): Promise<number> => {
+  if (Platform.OS === 'web') return 67;
   if (!db) {
     await initRiskProfile();
   }
@@ -292,6 +302,7 @@ export const getNextSafeHarbor = async (): Promise<{
   minutesUntil: number;
   label: string;
 } | null> => {
+  if (Platform.OS === 'web') return WEB_MOCK_SAFE_HARBOR;
   const profile = await calculate24HourProfile();
   const now = new Date();
   const currentHour = now.getHours();

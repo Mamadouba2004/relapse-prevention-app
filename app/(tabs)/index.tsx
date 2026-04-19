@@ -2,6 +2,16 @@ import InterventionModal from '@/app/components/InterventionModal';
 import LapseSupportModal from '@/app/components/LapseSupportModal';
 import { initDataCollection } from '@/app/services/dataCollection';
 import { initInterventions, shouldTriggerIntervention } from '@/app/services/interventions';
+import {
+  WEB_MOCK_CONFIDENCE_MAX,
+  WEB_MOCK_CONFIDENCE_MIN,
+  WEB_MOCK_HIGH_RISK_WINDOWS,
+  WEB_MOCK_ML_PREDICTION,
+  WEB_MOCK_MODEL_ACCURACY,
+  WEB_MOCK_NAVIGATED_WINDOWS,
+  WEB_MOCK_RISK_SCORE,
+  WEB_MOCK_TREND_DATA,
+} from '@/app/services/mockData';
 import { calculateModelAccuracy, invalidatePredictionCache, predictUrgeRisk } from '@/app/services/mlPredictor';
 import {
   initNotifications,
@@ -104,6 +114,7 @@ export default function HomeScreen() {
   const [routineItems, setRoutineItems] = useState<string[]>([]);
 
   const checkRoutineStatus = useCallback(async () => {
+    if (Platform.OS === 'web') return;
     if (!isDbReady || !db) return;
     const hour = new Date().getHours();
     
@@ -174,6 +185,7 @@ export default function HomeScreen() {
 
   // Calculate JITAI metrics from database
   const calculateJITAIMetrics = useCallback(async (currentRisk?: number) => {
+    if (Platform.OS === 'web') return;
     if (!db) return;
     
     // Use the provided risk or fallback to state (careful of stale state!)
@@ -240,6 +252,7 @@ export default function HomeScreen() {
 
   // Calculate Trend: Compare current score to ~1 hour ago
   const updateRiskTrend = useCallback(async (currentScore: number) => {
+    if (Platform.OS === 'web') return;
     if (!db) return;
     
     // 1. Save current snapshot
@@ -277,6 +290,22 @@ export default function HomeScreen() {
   }, [db]);
 
   const checkAndInitApp = async () => {
+    // On web: skip SQLite entirely and show dashboard with mock data
+    if (Platform.OS === 'web') {
+      setShowOnboarding(false);
+      setLiveRiskScore(WEB_MOCK_RISK_SCORE);
+      setConfidenceMin(WEB_MOCK_CONFIDENCE_MIN);
+      setConfidenceMax(WEB_MOCK_CONFIDENCE_MAX);
+      setModelAccuracy(WEB_MOCK_MODEL_ACCURACY);
+      setHighRiskWindows(WEB_MOCK_HIGH_RISK_WINDOWS);
+      setNavigatedWindows(WEB_MOCK_NAVIGATED_WINDOWS);
+      setMlPrediction(WEB_MOCK_ML_PREDICTION);
+      setTrendData(WEB_MOCK_TREND_DATA);
+      setLastSuccessTime('2h ago');
+      setIsDbReady(true);
+      return;
+    }
+
     const database = await SQLite.openDatabaseAsync('behavior.db');
     setDb(database);
 
@@ -404,6 +433,7 @@ export default function HomeScreen() {
   };
 
   const loadRiskData = useCallback(async () => {
+    if (Platform.OS === 'web') return; // mock data already loaded in checkAndInitApp
     if (!isDbReady) return; // Wait for DB
     try {
       await initRiskProfile();
@@ -466,6 +496,14 @@ export default function HomeScreen() {
   }, [isDbReady, updateRiskTrend, calculateJITAIMetrics]);
 
   const handleCheckIn = async (status: 'good' | 'struggling') => {
+    if (Platform.OS === 'web') {
+      if (status === 'good') {
+        Alert.alert("Great to hear!", "Your risk score reflects this positive check-in.");
+      } else {
+        setShowIntervention(true);
+      }
+      return;
+    }
     if (!db) return;
     const timestamp = Date.now();
     
@@ -500,6 +538,11 @@ export default function HomeScreen() {
   };
 
   const logEvent = async (type: 'urge' | 'lapse' | 'safe') => {
+    if (Platform.OS === 'web') {
+      if (type === 'urge') setShowIntervention(true);
+      else if (type === 'lapse') setShowLapseSupport(true);
+      return;
+    }
     if (!db) return;
 
     const timestamp = Date.now();
@@ -640,6 +683,11 @@ export default function HomeScreen() {
   };
 
   const handleCompleteRoutine = async () => {
+    if (Platform.OS === 'web') {
+      setShowRoutineCard(false);
+      Alert.alert("Routine Complete", "Sleep well! ✅");
+      return;
+    }
     if (!db) return;
     try {
         await db.runAsync(
