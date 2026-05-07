@@ -31,8 +31,10 @@
         "NOTIFICATIONS"
       ]
     },
+    "description": "A Just-In-Time Adaptive Intervention (JITAI) system for behavioral health that predicts and intervenes during high-risk relapse windows.",
     "web": {
       "output": "static",
+      "bundler": "metro",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
